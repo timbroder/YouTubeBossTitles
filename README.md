@@ -10,13 +10,15 @@ Automatically updates PS5 game video titles with boss names using AI vision anal
 - Updates titles to format: `[Game Name]: [Boss Name] PS5`
 - Adds "Melee" tag for souls-like games: `[Game Name]: [Boss Name] Melee PS5`
 - Automatically organizes videos into game-specific playlists
+- Logs all changes to a Google Sheet with original title, new title, playlist info, and direct links
 
 ## Prerequisites
 
 - Python 3.8 or higher
 - ffmpeg installed on your system (for video frame extraction)
 - YouTube channel with videos
-- Google Cloud account (for YouTube API)
+- Google Cloud account (for YouTube API and Google Sheets)
+- Google Drive (for storing the log spreadsheet)
 - OpenAI account with API access
 
 ## Setup Instructions
@@ -54,11 +56,14 @@ pip install -r requirements.txt
 3. Enter project name (e.g., "YouTube Boss Updater")
 4. Click "Create"
 
-#### Step 2: Enable YouTube Data API v3
+#### Step 2: Enable Required APIs
 
 1. In your project, go to "APIs & Services" → "Library"
 2. Search for "YouTube Data API v3"
 3. Click on it and press "Enable"
+4. Go back to "Library"
+5. Search for "Google Sheets API"
+6. Click on it and press "Enable"
 
 #### Step 3: Create OAuth 2.0 Credentials
 
@@ -141,18 +146,26 @@ On first run, a browser window will open asking you to authorize the app. After 
 
 ## How It Works
 
-1. **Authentication**: Connects to YouTube using OAuth 2.0
-2. **Video Discovery**: Fetches all videos from your channel
-3. **Title Detection**: Identifies videos with default PS5 titles using regex pattern
-4. **Game Extraction**: Extracts game name from the title
-5. **Boss Identification** (Hybrid Approach):
+1. **Authentication**: Connects to YouTube and Google Sheets using OAuth 2.0
+2. **Log Setup**: Creates or opens a Google Sheet named "YouTube Boss Title Updates"
+3. **Video Discovery**: Fetches all videos from your channel
+4. **Title Detection**: Identifies videos with default PS5 titles using regex pattern
+5. **Game Extraction**: Extracts game name from the title
+6. **Boss Identification** (Hybrid Approach):
    - **Step 1**: Tries video thumbnail first (fast, no download needed)
    - **Step 2**: If thumbnail fails, downloads first 90 seconds of video using yt-dlp
    - **Step 3**: Extracts frames at 10s, 20s, 30s, 45s, and 60s using ffmpeg
    - **Step 4**: Sends frames to OpenAI GPT-4 Vision API
    - AI analyzes images to identify boss name from health bars, UI elements, boss intro screens
-6. **Title Update**: Formats and updates the title with boss name
-7. **Playlist Organization**: Adds video to game-specific playlist (creates if needed)
+7. **Title Update**: Formats and updates the title with boss name
+8. **Playlist Organization**: Adds video to game-specific playlist (creates if needed)
+9. **Logging**: Records all changes to Google Sheet with:
+   - Timestamp
+   - Original title
+   - New title
+   - Playlist name
+   - Direct link to video
+   - Direct link to playlist
 
 ## Title Formats
 
@@ -199,6 +212,28 @@ The script includes a 2-second delay between processing videos to respect API ra
 ```python
 time.sleep(2)  # Change to desired delay in seconds
 ```
+
+### Google Sheets Logging
+
+The script automatically creates a Google Sheet named "YouTube Boss Title Updates" to log all changes.
+
+**Spreadsheet Columns:**
+- **Timestamp**: When the change was made
+- **Original Title**: The default PS5 title before changes
+- **New Title**: The updated title with boss name
+- **Playlist Name**: The game playlist it was added to
+- **Video Link**: Direct link to the video on YouTube
+- **Playlist Link**: Direct link to the playlist
+
+**Customizing the spreadsheet name:**
+```python
+updater = YouTubeBossUpdater(
+    openai_api_key=openai_api_key,
+    log_spreadsheet_name="My Custom Log Name"
+)
+```
+
+The spreadsheet will be created in your Google Drive and can be shared with others for review.
 
 ## Troubleshooting
 

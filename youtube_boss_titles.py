@@ -23,10 +23,14 @@ import openai
 import requests
 from PIL import Image
 import yt_dlp
+import gspread
 
 
-# YouTube API scopes
-SCOPES = ['https://www.googleapis.com/auth/youtube.force-ssl']
+# API scopes
+SCOPES = [
+    'https://www.googleapis.com/auth/youtube.force-ssl',
+    'https://www.googleapis.com/auth/spreadsheets'
+]
 
 # Souls-like games that should get "Melee" in the title
 SOULSLIKE_GAMES = [
@@ -48,9 +52,12 @@ SOULSLIKE_GAMES = [
 
 
 class YouTubeBossUpdater:
-    def __init__(self, openai_api_key: str):
+    def __init__(self, openai_api_key: str, log_spreadsheet_name: str = "YouTube Boss Title Updates"):
         """Initialize the updater with API credentials"""
         self.youtube = None
+        self.sheets_client = None
+        self.log_sheet = None
+        self.log_spreadsheet_name = log_spreadsheet_name
         self.openai_client = openai.OpenAI(api_key=openai_api_key)
 
     def authenticate_youtube(self):
@@ -79,6 +86,66 @@ class YouTubeBossUpdater:
 
         self.youtube = build('youtube', 'v3', credentials=creds)
         print("✓ YouTube authentication successful")
+
+        # Initialize Google Sheets client
+        self.sheets_client = gspread.authorize(creds)
+        print("✓ Google Sheets authentication successful")
+
+    def setup_log_spreadsheet(self):
+        """Create or open the log spreadsheet and set up headers"""
+        try:
+            # Try to open existing spreadsheet
+            spreadsheet = self.sheets_client.open(self.log_spreadsheet_name)
+            self.log_sheet = spreadsheet.sheet1
+            print(f"✓ Opened existing log spreadsheet: {self.log_spreadsheet_name}")
+        except gspread.exceptions.SpreadsheetNotFound:
+            # Create new spreadsheet
+            spreadsheet = self.sheets_client.create(self.log_spreadsheet_name)
+            self.log_sheet = spreadsheet.sheet1
+
+            # Set up headers
+            headers = [
+                'Timestamp',
+                'Original Title',
+                'New Title',
+                'Playlist Name',
+                'Video Link',
+                'Playlist Link'
+            ]
+            self.log_sheet.append_row(headers)
+
+            # Format header row (bold)
+            self.log_sheet.format('A1:F1', {'textFormat': {'bold': True}})
+
+            print(f"✓ Created new log spreadsheet: {self.log_spreadsheet_name}")
+            print(f"  Spreadsheet URL: {spreadsheet.url}")
+
+    def log_video_update(self, video_id: str, original_title: str, new_title: str,
+                        playlist_name: str, playlist_id: Optional[str]):
+        """Log video update to Google Sheets"""
+        if not self.log_sheet:
+            print("  ⚠ Warning: Log sheet not initialized, skipping logging")
+            return
+
+        try:
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            video_link = f"https://www.youtube.com/watch?v={video_id}"
+            playlist_link = f"https://www.youtube.com/playlist?list={playlist_id}" if playlist_id else "N/A"
+
+            row = [
+                timestamp,
+                original_title,
+                new_title,
+                playlist_name,
+                video_link,
+                playlist_link
+            ]
+
+            self.log_sheet.append_row(row)
+            print(f"  ✓ Logged update to spreadsheet")
+
+        except Exception as e:
+            print(f"  ⚠ Warning: Failed to log to spreadsheet: {e}")
 
     def is_default_ps5_title(self, title: str) -> bool:
         """Check if video title matches PS5 default pattern"""
@@ -445,6 +512,9 @@ Boss name:"""
         # Format new title
         new_title = self.format_title(game_name, boss_name)
 
+        # Store original title for logging
+        original_title = title
+
         # Update title
         if not self.update_video_title(video_id, new_title):
             return False
@@ -453,6 +523,15 @@ Boss name:"""
         playlist_id = self.get_or_create_playlist(game_name)
         if playlist_id:
             self.add_video_to_playlist(video_id, playlist_id)
+
+        # Log the update to Google Sheets
+        self.log_video_update(
+            video_id=video_id,
+            original_title=original_title,
+            new_title=new_title,
+            playlist_name=game_name,
+            playlist_id=playlist_id
+        )
 
         return True
 
@@ -463,6 +542,11 @@ Boss name:"""
 
         # Authenticate
         self.authenticate_youtube()
+
+        # Setup log spreadsheet
+        if not dry_run:
+            print("\nSetting up log spreadsheet...")
+            self.setup_log_spreadsheet()
 
         # Get all videos
         print("\nFetching videos...")
