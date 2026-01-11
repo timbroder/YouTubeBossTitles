@@ -5,7 +5,8 @@ Automatically updates PS5 game video titles with boss names using AI vision anal
 ## Features
 
 - Detects videos with default PS5 titles (e.g., `Bloodborne_20250321184741`)
-- Uses OpenAI GPT-4 Vision to identify boss names from video thumbnails
+- Hybrid boss identification: tries thumbnail first, then extracts video frames if needed
+- Uses OpenAI GPT-4 Vision to identify boss names from multiple frames
 - Updates titles to format: `[Game Name]: [Boss Name] PS5`
 - Adds "Melee" tag for souls-like games: `[Game Name]: [Boss Name] Melee PS5`
 - Automatically organizes videos into game-specific playlists
@@ -13,19 +14,38 @@ Automatically updates PS5 game video titles with boss names using AI vision anal
 ## Prerequisites
 
 - Python 3.8 or higher
+- ffmpeg installed on your system (for video frame extraction)
 - YouTube channel with videos
 - Google Cloud account (for YouTube API)
 - OpenAI account with API access
 
 ## Setup Instructions
 
-### 1. Install Python Dependencies
+### 1. Install ffmpeg
+
+The script requires ffmpeg to extract frames from videos.
+
+**Linux (Ubuntu/Debian):**
+```bash
+sudo apt update
+sudo apt install ffmpeg
+```
+
+**Mac:**
+```bash
+brew install ffmpeg
+```
+
+**Windows:**
+Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH
+
+### 2. Install Python Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Set Up YouTube API Credentials
+### 3. Set Up YouTube API Credentials
 
 #### Step 1: Create a Google Cloud Project
 
@@ -61,7 +81,7 @@ pip install -r requirements.txt
 6. Rename the downloaded file to `client_secret.json`
 7. Move `client_secret.json` to this project directory
 
-### 3. Set Up OpenAI API Key
+### 4. Set Up OpenAI API Key
 
 #### Step 1: Get API Key
 
@@ -125,10 +145,12 @@ On first run, a browser window will open asking you to authorize the app. After 
 2. **Video Discovery**: Fetches all videos from your channel
 3. **Title Detection**: Identifies videos with default PS5 titles using regex pattern
 4. **Game Extraction**: Extracts game name from the title
-5. **Boss Identification**:
-   - Gets video thumbnail (can be enhanced with youtube-dl for actual frames)
-   - Sends to OpenAI GPT-4 Vision API
-   - AI analyzes the image to identify boss name from health bars, UI elements
+5. **Boss Identification** (Hybrid Approach):
+   - **Step 1**: Tries video thumbnail first (fast, no download needed)
+   - **Step 2**: If thumbnail fails, downloads first 90 seconds of video using yt-dlp
+   - **Step 3**: Extracts frames at 10s, 20s, 30s, 45s, and 60s using ffmpeg
+   - **Step 4**: Sends frames to OpenAI GPT-4 Vision API
+   - AI analyzes images to identify boss name from health bars, UI elements, boss intro screens
 6. **Title Update**: Formats and updates the title with boss name
 7. **Playlist Organization**: Adds video to game-specific playlist (creates if needed)
 
@@ -195,24 +217,33 @@ time.sleep(2)  # Change to desired delay in seconds
 - Consider requesting a quota increase
 
 ### Boss identification not accurate
-- The script uses video thumbnails by default
-- For better accuracy, enhance with youtube-dl to extract actual video frames
-- You can modify `download_video_thumbnail()` to extract frames at specific timestamps
+- The script tries thumbnails first, then automatically extracts video frames
+- You can customize frame extraction timestamps by modifying the `timestamps` parameter in `extract_video_frames()`
+- Default timestamps are: 10s, 20s, 30s, 45s, 60s
+
+### ffmpeg not found
+- Make sure ffmpeg is installed and available in your PATH
+- Test with: `ffmpeg -version`
+- See installation instructions above
 
 ## Future Enhancements
 
 Potential improvements:
-- Extract actual video frames instead of thumbnails using youtube-dl
-- Scrape boss lists from gaming wikis for better context
+- Scrape boss lists from gaming wikis for better AI context
 - Add support for custom game-to-playlist mappings
 - Batch processing with progress bars
 - Backup original titles before updating
 - Support for custom title templates
+- Configurable frame extraction timestamps per game
+- Support for analyzing longer videos (currently limited to first 90 seconds)
 
 ## Costs
 
 - **YouTube API**: Free tier includes 10,000 quota units per day (sufficient for most users)
-- **OpenAI API**: Charges per API call (~$0.01-0.03 per video depending on image size)
+- **OpenAI API**:
+  - Thumbnail-only identification: ~$0.01 per video
+  - With frame extraction: ~$0.03-0.05 per video (5 frames analyzed)
+  - Most videos will try thumbnail first, only downloading if needed
 
 ## License
 

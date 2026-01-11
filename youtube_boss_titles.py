@@ -7,8 +7,12 @@ Automatically updates PS5 game videos with boss names
 import os
 import re
 import json
+import base64
+import tempfile
+import subprocess
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
+from pathlib import Path
 import time
 
 from google.oauth2.credentials import Credentials
@@ -17,6 +21,8 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 import openai
 import requests
+from PIL import Image
+import yt_dlp
 
 
 # YouTube API scopes
@@ -134,15 +140,84 @@ class YouTubeBossUpdater:
 
         return videos
 
-    def download_video_thumbnail(self, video_id: str, timestamp_seconds: int = 30) -> Optional[str]:
-        """
-        Get a frame from the video at specified timestamp
-        YouTube API doesn't provide video frames directly, so we'll use thumbnail
-        and ask the user to use youtube-dl or similar if they want actual frames
-        """
-        # For now, we'll use the default thumbnail
-        # In production, you'd want to use youtube-dl to extract frames
+    def get_video_thumbnail_url(self, video_id: str) -> str:
+        """Get the default YouTube thumbnail URL"""
         return f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
+
+    def extract_video_frames(self, video_id: str, timestamps: List[int] = None) -> List[str]:
+        """
+        Extract frames from video at specific timestamps using yt-dlp
+        Returns list of base64-encoded image data URLs
+        """
+        if timestamps is None:
+            # Default timestamps: 10s, 20s, 30s, 45s, 60s
+            timestamps = [10, 20, 30, 45, 60]
+
+        print(f"  Extracting frames from video at timestamps: {timestamps}")
+
+        frames = []
+        temp_dir = tempfile.mkdtemp()
+
+        try:
+            video_url = f"https://www.youtube.com/watch?v={video_id}"
+            video_path = os.path.join(temp_dir, 'video.mp4')
+
+            # Download first 90 seconds of video
+            ydl_opts = {
+                'format': 'worst[ext=mp4]',  # Use worst quality for speed
+                'outtmpl': video_path,
+                'quiet': True,
+                'no_warnings': True,
+                'download_ranges': lambda info, ydl: [{'start_time': 0, 'end_time': 90}],
+            }
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([video_url])
+
+            if not os.path.exists(video_path):
+                print(f"  ✗ Failed to download video")
+                return frames
+
+            # Extract frames at specified timestamps using ffmpeg
+            for i, timestamp in enumerate(timestamps):
+                frame_path = os.path.join(temp_dir, f'frame_{i}.jpg')
+
+                try:
+                    # Use ffmpeg to extract frame at timestamp
+                    subprocess.run([
+                        'ffmpeg',
+                        '-ss', str(timestamp),
+                        '-i', video_path,
+                        '-frames:v', '1',
+                        '-q:v', '2',
+                        '-y',
+                        frame_path
+                    ], check=True, capture_output=True, timeout=10)
+
+                    if os.path.exists(frame_path):
+                        # Convert to base64 for OpenAI API
+                        with open(frame_path, 'rb') as f:
+                            image_data = base64.b64encode(f.read()).decode('utf-8')
+                            frames.append(f"data:image/jpeg;base64,{image_data}")
+
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                    print(f"  ⚠ Failed to extract frame at {timestamp}s")
+                    continue
+
+            print(f"  ✓ Extracted {len(frames)} frames")
+
+        except Exception as e:
+            print(f"  ✗ Error extracting frames: {e}")
+
+        finally:
+            # Cleanup temp files
+            try:
+                import shutil
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
+
+        return frames
 
     def get_boss_list(self, game_name: str) -> List[str]:
         """
@@ -153,62 +228,88 @@ class YouTubeBossUpdater:
         # In a more sophisticated version, you could scrape wikis, use gaming APIs, etc.
         return []
 
-    def identify_boss(self, video_id: str, game_name: str) -> Optional[str]:
-        """Use OpenAI Vision to identify the boss in the video"""
-        print(f"  Analyzing video {video_id} for boss identification...")
-
-        # Get video thumbnail (in production, use youtube-dl for actual frames)
-        thumbnail_url = self.download_video_thumbnail(video_id)
-
+    def identify_boss_from_images(self, image_urls: List[str], game_name: str) -> Optional[str]:
+        """Use OpenAI Vision to identify boss from one or more images"""
         # Get potential boss list
         boss_list = self.get_boss_list(game_name)
         boss_context = f"\n\nKnown bosses in {game_name}: {', '.join(boss_list)}" if boss_list else ""
 
-        # Use OpenAI Vision API to identify the boss
-        try:
-            response = self.openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": f"""This is a screenshot from a {game_name} gameplay video.
+        # Build content with text prompt and all images
+        content = [
+            {
+                "type": "text",
+                "text": f"""These are screenshots from a {game_name} gameplay video.
 
-Please identify the boss being fought in this image. Look for:
+Please identify the boss being fought in these images. Look for:
 1. Boss health bars or names displayed on screen
 2. Large enemy characters that appear to be bosses
 3. Arena or environment indicators
+4. Boss introduction text or cutscenes
 
 If you can identify a specific boss name, respond with ONLY the boss name.
 If you cannot identify a specific boss, respond with "Unknown Boss".{boss_context}
 
 Boss name:"""
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": thumbnail_url
-                                }
-                            }
-                        ]
-                    }
-                ],
+            }
+        ]
+
+        # Add all image URLs
+        for url in image_urls:
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": url}
+            })
+
+        try:
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": content}],
                 max_tokens=100
             )
 
             boss_name = response.choices[0].message.content.strip()
 
             if boss_name and boss_name != "Unknown Boss":
-                print(f"  ✓ Identified boss: {boss_name}")
                 return boss_name
             else:
-                print(f"  ✗ Could not identify boss")
                 return None
 
         except Exception as e:
-            print(f"  ✗ Error identifying boss: {e}")
+            print(f"  ✗ Error calling OpenAI API: {e}")
+            return None
+
+    def identify_boss(self, video_id: str, game_name: str) -> Optional[str]:
+        """
+        Use OpenAI Vision to identify the boss in the video
+        Hybrid approach: Try thumbnail first, then extract video frames if needed
+        """
+        print(f"  Analyzing video {video_id} for boss identification...")
+
+        # Step 1: Try with thumbnail first (fast and free)
+        print(f"  Trying thumbnail first...")
+        thumbnail_url = self.get_video_thumbnail_url(video_id)
+        boss_name = self.identify_boss_from_images([thumbnail_url], game_name)
+
+        if boss_name:
+            print(f"  ✓ Identified boss from thumbnail: {boss_name}")
+            return boss_name
+
+        # Step 2: Thumbnail didn't work, extract actual video frames
+        print(f"  Thumbnail didn't work, extracting frames from video...")
+        frames = self.extract_video_frames(video_id)
+
+        if not frames:
+            print(f"  ✗ Could not extract frames from video")
+            return None
+
+        # Try to identify boss from extracted frames
+        boss_name = self.identify_boss_from_images(frames, game_name)
+
+        if boss_name:
+            print(f"  ✓ Identified boss from video frames: {boss_name}")
+            return boss_name
+        else:
+            print(f"  ✗ Could not identify boss even from video frames")
             return None
 
     def format_title(self, game_name: str, boss_name: str) -> str:
