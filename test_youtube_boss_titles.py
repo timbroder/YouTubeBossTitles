@@ -423,10 +423,11 @@ class TestSheetsLogging:
         assert updater.log_sheet == mock_sheet
         mock_sheets_client.open.assert_called_once_with("YouTube Boss Title Updates")
 
-    @patch('youtube_boss_titles.gspread')
-    def test_setup_log_spreadsheet_new(self, mock_gspread_module, updater):
+    def test_setup_log_spreadsheet_new(self, updater):
         """Test creating new log spreadsheet"""
-        import gspread
+        # Create a mock exception that inherits from Exception
+        class MockSpreadsheetNotFound(Exception):
+            pass
 
         mock_spreadsheet = Mock()
         mock_sheet = Mock()
@@ -434,11 +435,13 @@ class TestSheetsLogging:
         mock_spreadsheet.url = 'https://docs.google.com/spreadsheets/test'
 
         mock_sheets_client = Mock()
-        mock_sheets_client.open.side_effect = gspread.exceptions.SpreadsheetNotFound
+        mock_sheets_client.open.side_effect = MockSpreadsheetNotFound
         mock_sheets_client.create.return_value = mock_spreadsheet
         updater.sheets_client = mock_sheets_client
 
-        updater.setup_log_spreadsheet()
+        # Patch the exception in the actual code
+        with patch('youtube_boss_titles.gspread.exceptions.SpreadsheetNotFound', MockSpreadsheetNotFound):
+            updater.setup_log_spreadsheet()
 
         assert updater.log_sheet == mock_sheet
         mock_sheet.append_row.assert_called_once()
@@ -599,7 +602,8 @@ class TestIntegration:
 
     def test_run_dry_run_mode(self, updater, sample_ps5_videos):
         """Test dry run mode doesn't make changes"""
-        # Mock authentication
+        # Mock authentication method
+        updater.authenticate_youtube = Mock()
         updater.youtube = Mock()
         updater.sheets_client = Mock()
 
@@ -608,6 +612,9 @@ class TestIntegration:
 
         # Run in dry run mode
         updater.run(dry_run=True)
+
+        # Verify authentication was called
+        updater.authenticate_youtube.assert_called_once()
 
         # Verify no sheets setup was called
         assert updater.log_sheet is None
