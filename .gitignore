@@ -16,6 +16,13 @@ build/
 dist/
 *.egg-info/
 
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+
 # IDE
 .vscode/
 .idea/

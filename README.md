@@ -261,6 +261,96 @@ The spreadsheet will be created in your Google Drive and can be shared with othe
 - Test with: `ffmpeg -version`
 - See installation instructions above
 
+## Testing
+
+The project includes comprehensive unit and integration tests.
+
+### Running Tests
+
+**Run all tests:**
+```bash
+pytest
+```
+
+**Run with coverage report:**
+```bash
+pytest --cov=youtube_boss_titles --cov-report=html
+```
+
+**Run specific test classes:**
+```bash
+pytest test_youtube_boss_titles.py::TestTitleDetection -v
+pytest test_youtube_boss_titles.py::TestBossIdentification -v
+```
+
+**Run specific test:**
+```bash
+pytest test_youtube_boss_titles.py::TestTitleDetection::test_is_default_ps5_title_valid -v
+```
+
+### Test Coverage
+
+The test suite includes:
+
+**Unit Tests:**
+- Title detection and parsing (PS5 title pattern matching)
+- Game name extraction
+- Souls-like game detection
+- Title formatting for regular and souls-like games
+- Authentication flows
+- Video thumbnail URL generation
+- Frame extraction from videos
+- Boss identification from images
+- Playlist management (create/get)
+- Google Sheets logging
+- Video title updates
+
+**Integration Tests:**
+- Full video processing workflow
+- End-to-end authentication and API calls
+- Dry run mode validation
+- Error handling and edge cases
+
+**Mocked Components:**
+- YouTube Data API
+- Google Sheets API
+- OpenAI API
+- yt-dlp video downloads
+- ffmpeg frame extraction
+- OAuth authentication
+
+### Viewing Coverage Report
+
+After running tests with coverage, open the HTML report:
+
+```bash
+# Linux/Mac
+open htmlcov/index.html
+
+# Windows
+start htmlcov/index.html
+```
+
+### Test Structure
+
+```
+test_youtube_boss_titles.py
+├── Fixtures (shared test data and mocks)
+├── Unit Tests
+│   ├── TestTitleDetection
+│   ├── TestTitleFormatting
+│   ├── TestAuthentication
+│   ├── TestVideoOperations
+│   ├── TestBossIdentification
+│   ├── TestPlaylistManagement
+│   ├── TestSheetsLogging
+│   └── TestVideoTitleUpdate
+├── Integration Tests
+│   └── TestIntegration
+└── Edge Cases
+    └── TestEdgeCases
+```
+
 ## Future Enhancements
 
 Potential improvements:
