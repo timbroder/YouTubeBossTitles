@@ -541,34 +541,6 @@ CREATE TABLE processed_videos (
 - New: `discord_bot.py`
 - `requirements.txt` (add discord.py)
 
-### 10.2 Notion Integration
-**Priority:** Low | **Effort:** Medium | **Status:** 🔴
-
-**Tasks:**
-- [ ] Create Notion database for logging
-- [ ] Sync Google Sheets to Notion
-- [ ] Add rich media (thumbnails, videos)
-
-**Files to modify:**
-- New: `notion_integration.py`
-- `requirements.txt` (add notion-client)
-
-### 10.3 Plugin System
-**Priority:** Low | **Effort:** Large | **Status:** 🔴
-
-**Tasks:**
-- [ ] Design plugin architecture
-- [ ] Create plugin interface
-- [ ] Support custom boss identification methods
-- [ ] Support custom title formatters
-- [ ] Document plugin development
-
-**Files to modify:**
-- New: `plugins/` directory
-- New: `plugin_manager.py`
-
----
-
 ## Quick Wins (Can be done in < 2 hours each)
 
 ### QW1: Version Flag
