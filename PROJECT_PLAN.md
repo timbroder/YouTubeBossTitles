@@ -431,21 +431,7 @@ CREATE TABLE processed_videos (
 
 ## Phase 8: Advanced Features
 
-### 8.1 Multi-Console Support
-**Priority:** Low | **Effort:** Medium | **Status:** 🔴
-
-**Tasks:**
-- [ ] Add Xbox title pattern detection
-- [ ] Add Nintendo Switch title pattern detection
-- [ ] Add configurable title patterns
-- [ ] Update regex patterns
-- [ ] Test with sample titles
-
-**Files to modify:**
-- `youtube_boss_titles.py` (title detection)
-- `config.yml` (add console patterns)
-
-### 8.2 Video Description Updates
+### 8.1 Video Description Updates
 **Priority:** Low | **Effort:** Small | **Status:** 🔴
 
 **Tasks:**
