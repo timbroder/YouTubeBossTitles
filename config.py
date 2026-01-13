@@ -14,7 +14,7 @@ class Config:
 
     DEFAULT_CONFIG = {
         'openai': {
-            'api_key': None,  # Load from environment if not specified
+            'api_key': '${OPENAI_API_KEY}',  # Placeholder for environment variable
             'model': 'gpt-4o',
             'max_tokens': 100
         },
@@ -88,18 +88,30 @@ class Config:
                 base[key] = value
 
     def _load_from_environment(self):
-        """Load sensitive values from environment variables"""
-        openai_key = os.getenv('OPENAI_API_KEY')
-        if openai_key:
-            self.config['openai']['api_key'] = openai_key
+        """Load sensitive values from environment variables, replacing placeholders"""
+        self._resolve_env_placeholders(self.config)
+
+    def _resolve_env_placeholders(self, config_dict: Dict):
+        """Recursively resolve environment variable placeholders in config"""
+        for key, value in config_dict.items():
+            if isinstance(value, dict):
+                self._resolve_env_placeholders(value)
+            elif isinstance(value, str) and value.startswith('${') and value.endswith('}'):
+                # Extract environment variable name
+                env_var = value[2:-1]
+                env_value = os.getenv(env_var)
+                if env_value:
+                    config_dict[key] = env_value
+                # If env var not found, keep placeholder (will be caught by validation)
 
     def validate(self):
         """Validate required configuration values"""
         errors = []
 
         # Check OpenAI API key
-        if not self.config['openai']['api_key']:
-            errors.append("OpenAI API key is required (set OPENAI_API_KEY environment variable)")
+        api_key = self.config['openai']['api_key']
+        if not api_key or (isinstance(api_key, str) and api_key.startswith('${')):
+            errors.append("OpenAI API key is required (set OPENAI_API_KEY environment variable or configure in config file)")
 
         # Validate frame extraction timestamps
         timestamps = self.config['processing']['frame_extraction']['timestamps']
@@ -144,7 +156,9 @@ def create_example_config(output_path: str = 'config.yml.example'):
 
 # OpenAI Configuration
 openai:
-  # API key can also be set via OPENAI_API_KEY environment variable
+  # Use placeholder for environment variable (default)
+  api_key: "${OPENAI_API_KEY}"
+  # Or set directly (not recommended for security)
   # api_key: "sk-..."
   model: "gpt-4o"
   max_tokens: 100

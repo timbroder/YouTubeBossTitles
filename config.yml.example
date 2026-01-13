@@ -3,7 +3,9 @@
 
 # OpenAI Configuration
 openai:
-  # API key can also be set via OPENAI_API_KEY environment variable
+  # Use placeholder for environment variable (default)
+  api_key: "${OPENAI_API_KEY}"
+  # Or set directly (not recommended for security)
   # api_key: "sk-..."
   model: "gpt-4o"
   max_tokens: 100

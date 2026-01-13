@@ -265,31 +265,3 @@ def exponential_backoff(attempt: int, base_delay: float = 2.0, max_delay: float 
     """
     delay = base_delay * (2 ** attempt)
     return min(delay, max_delay)
-
-
-if __name__ == '__main__':
-    # Test database operations
-    db = VideoDatabase('test.db')
-
-    print("Testing database operations...")
-
-    # Add a test video
-    db.add_video('test123', 'Test Video Title', 'Test Game')
-    print("✓ Added video")
-
-    # Get video
-    video = db.get_video('test123')
-    print(f"✓ Retrieved video: {video['video_id']}")
-
-    # Update status
-    db.update_video_status('test123', 'completed', new_title='Test: Boss Name PS5', boss_name='Boss Name')
-    print("✓ Updated video status")
-
-    # Get statistics
-    stats = db.get_statistics()
-    print(f"✓ Statistics: {stats}")
-
-    # Clean up
-    import os
-    os.remove('test.db')
-    print("✓ Test complete")
