@@ -98,7 +98,6 @@ CREATE TABLE processed_videos (
 **Priority:** Medium | **Effort:** Medium | **Status:** 🔴
 
 **Tasks:**
-- [ ] Research gaming APIs (IGDB, RAWG, GiantBomb)
 - [ ] Implement IGDB API integration
 - [ ] Fetch game metadata (genre, tags, release date)
 - [ ] Use API to detect souls-like games dynamically
