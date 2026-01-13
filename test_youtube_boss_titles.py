@@ -693,7 +693,8 @@ class TestLogging:
         updater.extract_game_name = Mock(return_value='TestGame')
         updater.identify_boss = Mock(side_effect=Exception('Test error'))
         updater.db = Mock()
-        updater.db.get_video = Mock(return_value=None)
+        # First call returns None (not in DB yet), second call returns record with attempts
+        updater.db.get_video = Mock(side_effect=[None, {'attempts': 1, 'status': 'processing'}])
         updater.db.add_video = Mock()
         updater.db.update_video_status = Mock()
         updater.log_error_to_sheet = Mock()
@@ -712,22 +713,26 @@ class TestErrorTracking:
 
     def test_error_sheet_setup(self, updater):
         """Test that error sheet is created during setup"""
+        import gspread
         mock_spreadsheet = Mock()
         mock_sheet = Mock()
         mock_error_sheet = Mock()
 
         updater.sheets_client = Mock()
-        updater.sheets_client.open = Mock(side_effect=Exception("Not found"))
+        updater.sheets_client.open = Mock(side_effect=gspread.exceptions.SpreadsheetNotFound("Not found"))
         updater.sheets_client.create = Mock(return_value=mock_spreadsheet)
 
         mock_spreadsheet.sheet1 = mock_sheet
         mock_spreadsheet.add_worksheet = Mock(return_value=mock_error_sheet)
 
+        # Mock the _setup_error_sheet_headers method
+        updater._setup_error_sheet_headers = Mock()
+
         updater.setup_log_spreadsheet()
 
         # Verify error sheet was created
         mock_spreadsheet.add_worksheet.assert_called_with(title="Errors", rows="1000", cols="10")
-        assert updater.error_sheet is not None
+        assert updater.error_sheet == mock_error_sheet
 
     def test_log_error_to_sheet(self, updater):
         """Test logging errors to the Errors sheet"""
