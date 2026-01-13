@@ -98,7 +98,7 @@ CREATE TABLE processed_videos (
 **Priority:** Medium | **Effort:** Medium | **Status:** 🔴
 
 **Tasks:**
-- [ ] Implement IGDB API integration
+- [ ] Implement RAWG API integration
 - [ ] Fetch game metadata (genre, tags, release date)
 - [ ] Use API to detect souls-like games dynamically
 - [ ] Cache API responses to reduce calls
