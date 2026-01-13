@@ -3,6 +3,10 @@ client_secret.json
 token.json
 .env
 
+# Database
+processed_videos.db
+test.db
+
 # Python
 __pycache__/
 *.py[cod]

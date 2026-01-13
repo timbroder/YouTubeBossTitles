@@ -1,0 +1,43 @@
+# YouTube Boss Title Updater Configuration
+# Copy this file to config.yml and customize as needed
+
+# OpenAI Configuration
+openai:
+  # API key can also be set via OPENAI_API_KEY environment variable
+  # api_key: "sk-..."
+  model: "gpt-4o"
+  max_tokens: 100
+
+# YouTube Configuration
+youtube:
+  log_spreadsheet_name: "YouTube Boss Title Updates"
+  rate_limit_delay: 2  # seconds between video processing
+
+# Processing Configuration
+processing:
+  # Frame extraction settings
+  frame_extraction:
+    timestamps: [10, 20, 30, 45, 60]  # seconds into video to extract frames
+    quality: "worst"  # video quality for extraction (worst/best)
+
+  # Retry settings for API failures
+  retry:
+    max_attempts: 3
+    exponential_backoff: true
+
+# List of souls-like games that should get "Melee" tag
+soulslike_games:
+  - bloodborne
+  - dark souls
+  - demon's souls
+  - demons souls
+  - elden ring
+  - sekiro
+  - lords of the fallen
+  - lies of p
+  - nioh
+  - mortal shell
+  - salt and sanctuary
+  - hollow knight
+  - the surge
+  - remnant
