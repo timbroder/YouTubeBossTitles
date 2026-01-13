@@ -9,6 +9,7 @@ from unittest.mock import Mock, MagicMock, patch, call
 from datetime import datetime
 
 from youtube_boss_titles import YouTubeBossUpdater, SOULSLIKE_GAMES
+from config import Config
 
 
 # ============================================================================
@@ -16,16 +17,20 @@ from youtube_boss_titles import YouTubeBossUpdater, SOULSLIKE_GAMES
 # ============================================================================
 
 @pytest.fixture
-def mock_openai_api_key():
-    """Provide a mock OpenAI API key"""
-    return "test-openai-key-12345"
+def mock_config():
+    """Provide a mock Config object"""
+    config = Config()
+    # Override API key for testing
+    config.config['openai']['api_key'] = 'test-openai-key-12345'
+    return config
 
 
 @pytest.fixture
-def updater(mock_openai_api_key):
+def updater(mock_config):
     """Create a YouTubeBossUpdater instance with mocked OpenAI client"""
     with patch('youtube_boss_titles.openai.OpenAI'):
-        return YouTubeBossUpdater(openai_api_key=mock_openai_api_key)
+        with patch('youtube_boss_titles.VideoDatabase'):
+            return YouTubeBossUpdater(config=mock_config, db_path=':memory:')
 
 
 @pytest.fixture
@@ -513,10 +518,11 @@ class TestIntegration:
     """Integration tests for full workflows"""
 
     @patch('youtube_boss_titles.openai.OpenAI')
-    def test_process_video_full_workflow(self, mock_openai_class, mock_openai_api_key):
+    @patch('youtube_boss_titles.VideoDatabase')
+    def test_process_video_full_workflow(self, mock_db, mock_openai_class, mock_config):
         """Test full video processing workflow"""
         # Setup
-        updater = YouTubeBossUpdater(openai_api_key=mock_openai_api_key)
+        updater = YouTubeBossUpdater(config=mock_config, db_path=':memory:')
 
         # Mock YouTube API
         mock_youtube = Mock()
@@ -576,9 +582,10 @@ class TestIntegration:
         assert result is False
 
     @patch('youtube_boss_titles.openai.OpenAI')
-    def test_process_video_skip_when_boss_not_identified(self, mock_openai_class, mock_openai_api_key):
+    @patch('youtube_boss_titles.VideoDatabase')
+    def test_process_video_skip_when_boss_not_identified(self, mock_db, mock_openai_class, mock_config):
         """Test that videos are skipped when boss can't be identified"""
-        updater = YouTubeBossUpdater(openai_api_key=mock_openai_api_key)
+        updater = YouTubeBossUpdater(config=mock_config, db_path=':memory:')
 
         # Mock OpenAI to return Unknown Boss
         mock_openai_instance = Mock()
