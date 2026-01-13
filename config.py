@@ -30,6 +30,14 @@ class Config:
             'retry': {
                 'max_attempts': 3,
                 'exponential_backoff': True
+            },
+            'cache': {
+                'enabled': True,
+                'expiry_days': 30
+            },
+            'parallel': {
+                'enabled': False,
+                'workers': 3
             }
         },
         'soulslike_games': [
@@ -179,6 +187,16 @@ processing:
   retry:
     max_attempts: 3
     exponential_backoff: true
+
+  # Caching settings
+  cache:
+    enabled: true
+    expiry_days: 30  # cache entries expire after 30 days
+
+  # Parallel processing settings
+  parallel:
+    enabled: false  # enable parallel processing
+    workers: 3  # number of concurrent workers
 
 # List of souls-like games that should get "Melee" tag
 soulslike_games:

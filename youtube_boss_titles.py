@@ -466,11 +466,21 @@ Boss name:"""
     def identify_boss(self, video_id: str, game_name: str, attempt: int = 0) -> Optional[str]:
         """
         Use OpenAI Vision to identify the boss in the video
-        Hybrid approach: Try thumbnail first, then extract video frames if needed
+        Hybrid approach: Try cache first, then thumbnail, then extract video frames if needed
         Includes retry logic with exponential backoff
         """
         print(f"  Analyzing video {video_id} for boss identification...")
         self.logger.info(f"Starting boss identification for video {video_id}", extra={'video_id': video_id, 'game_name': game_name})
+
+        # Check cache first if enabled
+        cache_enabled = self.config.get('processing.cache.enabled', True)
+        if cache_enabled:
+            cached_result = self.db.get_cached_boss(video_id, game_name)
+            if cached_result:
+                boss_name = cached_result['boss_name']
+                print(f"  ✓ Found in cache: {boss_name} (source: {cached_result['source']})")
+                self.logger.info(f"Boss found in cache: {boss_name}", extra={'video_id': video_id, 'game_name': game_name, 'cache_hit': True})
+                return boss_name
 
         try:
             # Step 1: Try with thumbnail first (fast and free)
@@ -482,6 +492,12 @@ Boss name:"""
             if boss_name:
                 print(f"  ✓ Identified boss from thumbnail: {boss_name}")
                 self.logger.info(f"Boss identified from thumbnail: {boss_name}", extra={'video_id': video_id, 'game_name': game_name})
+
+                # Cache the result
+                if cache_enabled:
+                    expiry_days = self.config.get('processing.cache.expiry_days', 30)
+                    self.db.cache_boss(video_id, game_name, boss_name, source='thumbnail', expiry_days=expiry_days)
+
                 return boss_name
 
             # Step 2: Thumbnail didn't work, extract actual video frames
@@ -501,6 +517,12 @@ Boss name:"""
             if boss_name:
                 print(f"  ✓ Identified boss from video frames: {boss_name}")
                 self.logger.info(f"Boss identified from frames: {boss_name}", extra={'video_id': video_id, 'game_name': game_name})
+
+                # Cache the result
+                if cache_enabled:
+                    expiry_days = self.config.get('processing.cache.expiry_days', 30)
+                    self.db.cache_boss(video_id, game_name, boss_name, source='frames', expiry_days=expiry_days)
+
                 return boss_name
             else:
                 print(f"  ✗ Could not identify boss even from video frames")
@@ -791,7 +813,7 @@ Boss name:"""
 
     def run(self, dry_run: bool = False, video_id: Optional[str] = None,
             game: Optional[str] = None, limit: Optional[int] = None, force: bool = False,
-            resume: bool = False):
+            resume: bool = False, workers: Optional[int] = None):
         """Main execution function"""
         # Print header
         console.print()
@@ -808,18 +830,31 @@ Boss name:"""
         # Show database statistics
         if not dry_run:
             stats = self.db.get_statistics()
-            if stats.get('total', 0) > 0:
+            cache_stats = self.db.get_cache_statistics()
+
+            if stats.get('total', 0) > 0 or cache_stats.get('total', 0) > 0:
                 console.print("\n[bold]Database Status:[/bold]")
                 table = Table(show_header=False, box=None, padding=(0, 2))
                 table.add_column("Label", style="cyan")
                 table.add_column("Value", justify="right")
 
-                table.add_row("Total tracked", str(stats.get('total', 0)))
-                table.add_row("Completed", f"[green]{stats.get('completed', 0)}[/green]")
-                table.add_row("Failed", f"[red]{stats.get('failed', 0)}[/red]")
-                table.add_row("Pending", f"[yellow]{stats.get('pending', 0)}[/yellow]")
+                if stats.get('total', 0) > 0:
+                    table.add_row("Total tracked", str(stats.get('total', 0)))
+                    table.add_row("Completed", f"[green]{stats.get('completed', 0)}[/green]")
+                    table.add_row("Failed", f"[red]{stats.get('failed', 0)}[/red]")
+                    table.add_row("Pending", f"[yellow]{stats.get('pending', 0)}[/yellow]")
+
+                if cache_stats.get('total', 0) > 0:
+                    table.add_row("", "")  # Spacer
+                    table.add_row("Cache entries", f"[cyan]{cache_stats.get('active', 0)}[/cyan] active, [dim]{cache_stats.get('expired', 0)} expired[/dim]")
 
                 console.print(table)
+
+            # Cleanup expired cache entries
+            if cache_stats.get('expired', 0) > 0:
+                expired_cleaned = self.db.cleanup_expired_cache()
+                if expired_cleaned > 0:
+                    console.print(f"[dim]  Cleaned up {expired_cleaned} expired cache entries[/dim]")
 
         # Authenticate
         self.authenticate_youtube()
@@ -845,7 +880,7 @@ Boss name:"""
 
             if videos_to_process:
                 console.print(f"[cyan]Found {len(videos_to_process)} videos to resume[/cyan]\n")
-                self._process_video_list(videos_to_process, dry_run, force)
+                self._process_video_list(videos_to_process, dry_run, force, workers)
             else:
                 console.print("[yellow]No videos to resume[/yellow]")
             return
@@ -881,7 +916,7 @@ Boss name:"""
             console.print("\n[yellow]No videos to process![/yellow]")
             return
 
-        self._process_video_list(ps5_videos, dry_run, force)
+        self._process_video_list(ps5_videos, dry_run, force, workers)
 
     def _estimate_cost(self, num_videos: int) -> Dict[str, float]:
         """
@@ -921,8 +956,8 @@ Boss name:"""
         console.print(table)
         console.print()
 
-    def _process_video_list(self, videos: List[Dict], dry_run: bool, force: bool):
-        """Process a list of videos with rich progress bar"""
+    def _process_video_list(self, videos: List[Dict], dry_run: bool, force: bool, workers: Optional[int] = None):
+        """Process a list of videos with rich progress bar and optional parallel processing"""
         if dry_run:
             console.print("\n[yellow][DRY RUN MODE - No changes will be made][/yellow]\n")
 
@@ -930,7 +965,23 @@ Boss name:"""
         if not dry_run:
             self._show_cost_estimate(len(videos))
 
-        # Process each video
+        # Determine if we should use parallel processing
+        use_parallel = False
+        if workers is not None and workers > 1:
+            use_parallel = True
+        elif workers is None:
+            # Check config
+            parallel_enabled = self.config.get('processing.parallel.enabled', False)
+            if parallel_enabled:
+                workers = self.config.get('processing.parallel.workers', 3)
+                use_parallel = True
+
+        if use_parallel and not dry_run:
+            console.print(f"\n[bold cyan]Using parallel processing with {workers} workers[/bold cyan]\n")
+            self._process_video_list_parallel(videos, force, workers)
+            return
+
+        # Sequential processing
         processed = 0
         failed = 0
         skipped = 0
@@ -1029,6 +1080,87 @@ Boss name:"""
             console.print(table2)
             console.print()
 
+    def _process_video_list_parallel(self, videos: List[Dict], force: bool, workers: int):
+        """Process videos in parallel using ThreadPoolExecutor"""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import threading
+
+        processed = 0
+        failed = 0
+        skipped = 0
+
+        # Create thread-safe lock for shared resources
+        lock = threading.Lock()
+        results = {'processed': 0, 'failed': 0, 'skipped': 0}
+
+        def process_video_wrapper(video: Dict) -> Dict:
+            """Wrapper to process video and return result"""
+            try:
+                result = self.process_video(video, force=force)
+
+                with lock:
+                    if result:
+                        results['processed'] += 1
+                        return {'status': 'processed', 'video': video}
+                    else:
+                        # Check if it was skipped or failed
+                        video_id = video['id']
+                        db_record = self.db.get_video(video_id)
+                        if db_record and db_record['status'] == 'failed':
+                            results['failed'] += 1
+                            return {'status': 'failed', 'video': video}
+                        else:
+                            results['skipped'] += 1
+                            return {'status': 'skipped', 'video': video}
+            except Exception as e:
+                with lock:
+                    results['failed'] += 1
+                return {'status': 'error', 'video': video, 'error': str(e)}
+
+        # Create progress bar
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeRemainingColumn(),
+            console=console
+        ) as progress:
+
+            task = progress.add_task(
+                f"[cyan]Processing videos with {workers} workers...",
+                total=len(videos)
+            )
+
+            # Process videos in parallel
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                # Submit all videos to the executor
+                future_to_video = {executor.submit(process_video_wrapper, video): video for video in videos}
+
+                # Process completed futures as they finish
+                for future in as_completed(future_to_video):
+                    video = future_to_video[future]
+                    try:
+                        result = future.result()
+                        status = result['status']
+
+                        if status == 'processed':
+                            console.print(f"[green]✓[/green] {video['title'][:50]}... processed", style="dim")
+                        elif status == 'failed' or status == 'error':
+                            console.print(f"[red]✗[/red] {video['title'][:50]}... failed", style="dim")
+                        else:
+                            console.print(f"[yellow]⊘[/yellow] {video['title'][:50]}... skipped", style="dim")
+
+                    except Exception as e:
+                        console.print(f"[red]✗[/red] {video['title'][:50]}... error: {e}", style="dim")
+                        with lock:
+                            results['failed'] += 1
+
+                    progress.update(task, advance=1)
+
+        # Print summary
+        self._print_summary(len(videos), results['processed'], results['failed'], results['skipped'], False)
+
 
 def main():
     """Main entry point"""
@@ -1115,6 +1247,19 @@ Examples:
         help='Minimal output (WARNING level and above only)'
     )
 
+    parser.add_argument(
+        '--clear-cache',
+        action='store_true',
+        help='Clear all cached boss identification results and exit'
+    )
+
+    parser.add_argument(
+        '--workers',
+        type=int,
+        metavar='N',
+        help='Number of parallel workers for video processing (default: 1 for sequential, recommend 3-5 for parallel)'
+    )
+
     args = parser.parse_args()
 
     # Setup logging
@@ -1162,6 +1307,14 @@ Examples:
         logger.error(f"Authentication failed: {e}", exc_info=True)
         return 1
 
+    # Handle --clear-cache
+    if args.clear_cache:
+        console.print("\n[bold yellow]Clearing cache...[/bold yellow]")
+        total_cleared, expired_cleared = updater.db.clear_cache()
+        console.print(f"[green]✓[/green] Cleared {total_cleared} cache entries ({expired_cleared} were expired)")
+        logger.info(f"Cache cleared: {total_cleared} total, {expired_cleared} expired")
+        return 0
+
     # Handle --list-games
     if args.list_games:
         updater.list_games()
@@ -1175,7 +1328,8 @@ Examples:
             game=args.game,
             limit=args.limit,
             force=args.force,
-            resume=args.resume
+            resume=args.resume,
+            workers=args.workers
         )
         logger.info("Processing completed successfully")
     except KeyboardInterrupt:

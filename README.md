@@ -10,10 +10,16 @@ Automatically updates PS5 game video titles with boss names using AI vision anal
 - Detects videos with default PS5 titles (e.g., `Bloodborne_20250321184741`)
 - Hybrid boss identification: tries thumbnail first, then extracts video frames if needed
 - Uses OpenAI GPT-4 Vision to identify boss names from multiple frames
+- **NEW in Sprint 3:** Intelligent caching system for boss identifications (30-day default expiry)
+- **NEW in Sprint 3:** Parallel processing support with configurable workers for faster batch processing
 - Updates titles to format: `[Game Name]: [Boss Name] PS5`
 - Adds "Melee" tag for souls-like games: `[Game Name]: [Boss Name] Melee PS5`
 - Automatically organizes videos into game-specific playlists
 - Logs all changes to a Google Sheet with original title, new title, playlist info, and direct links
+- Database tracking with resume capability for interrupted runs
+- Comprehensive error handling and retry logic with exponential backoff
+- Rich CLI with progress bars and statistics
+- Structured JSON logging for debugging and monitoring
 
 ## Prerequisites
 
@@ -123,18 +129,49 @@ OPENAI_API_KEY=your-api-key-here
 
 ## Usage
 
+### Command Line Options
+
+The tool supports various command line options for flexible operation:
+
+```bash
+# Dry run mode (preview without changes)
+python youtube_boss_titles.py --dry-run
+
+# Process specific video
+python youtube_boss_titles.py --video-id abc123
+
+# Filter by game name
+python youtube_boss_titles.py --game "Bloodborne" --limit 5
+
+# Force reprocess already processed videos
+python youtube_boss_titles.py --force
+
+# Resume processing from database
+python youtube_boss_titles.py --resume
+
+# Use parallel processing (3-5 workers recommended)
+python youtube_boss_titles.py --workers 3
+
+# Clear cache
+python youtube_boss_titles.py --clear-cache
+
+# List all detected games
+python youtube_boss_titles.py --list-games
+
+# Use custom config file
+python youtube_boss_titles.py --config prod.yml
+
+# Verbose/quiet mode
+python youtube_boss_titles.py --verbose
+python youtube_boss_titles.py --quiet
+```
+
 ### First Run (Dry Run)
 
 Test the script without making changes:
 
-```python
-# Edit youtube_boss_titles.py, change the last line in main() to:
-updater.run(dry_run=True)
-```
-
-Then run:
 ```bash
-python youtube_boss_titles.py
+python youtube_boss_titles.py --dry-run
 ```
 
 ### Normal Run
@@ -194,6 +231,62 @@ Souls-like games include:
 - And more...
 
 ## Configuration
+
+### Performance Features (Sprint 3)
+
+#### Caching System
+
+The tool includes an intelligent caching system that stores boss identification results:
+
+- **Automatic caching**: Boss identifications are cached to avoid redundant API calls
+- **30-day expiry**: Cache entries expire after 30 days by default (configurable)
+- **Cache statistics**: View active and expired cache entries
+- **Manual cache management**: Use `--clear-cache` to clear all cached results
+
+```bash
+# Clear all cache
+python youtube_boss_titles.py --clear-cache
+
+# Cache statistics are shown at startup
+```
+
+Configuration in `config.yml`:
+```yaml
+processing:
+  cache:
+    enabled: true
+    expiry_days: 30  # Adjust cache expiry
+```
+
+#### Parallel Processing
+
+Process multiple videos simultaneously for faster batch operations:
+
+- **Configurable workers**: Set number of concurrent workers (3-5 recommended)
+- **Thread-safe operations**: Safe concurrent access to database and API
+- **Automatic rate limiting**: Respects API rate limits per thread
+
+```bash
+# Use 3 parallel workers
+python youtube_boss_titles.py --workers 3
+
+# Process 20 videos with 5 workers
+python youtube_boss_titles.py --limit 20 --workers 5
+```
+
+Configuration in `config.yml`:
+```yaml
+processing:
+  parallel:
+    enabled: false  # Enable automatic parallel processing
+    workers: 3      # Default number of workers
+```
+
+**Performance Tips:**
+- Start with 3 workers and increase if needed
+- Monitor API rate limits
+- Caching significantly reduces costs and processing time for reprocessing
+- Use parallel processing for large batches (20+ videos)
 
 ### Adding More Souls-like Games
 
