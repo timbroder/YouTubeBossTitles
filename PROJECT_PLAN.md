@@ -12,20 +12,20 @@ This document outlines all planned improvements and enhancements for the YouTube
 ## Phase 1: Core Usability Improvements
 
 ### 1.1 CLI Arguments & Configuration
-**Priority:** High | **Effort:** Medium | **Status:** 🔴
+**Priority:** High | **Effort:** Medium | **Status:** 🟢
 
 **Tasks:**
-- [ ] Add argparse for command-line argument parsing
-- [ ] Implement `--dry-run` flag
-- [ ] Implement `--config <path>` for custom config file
-- [ ] Implement `--video-id <id>` to process specific video
-- [ ] Implement `--game <name>` to filter by game
-- [ ] Implement `--limit <n>` to process only N videos
-- [ ] Implement `--force` to reprocess already-processed videos
-- [ ] Create default config.yml template
-- [ ] Add config file validation
-- [ ] Add `--version` flag
-- [ ] Add `--list-games` to show detected games with counts
+- [x] Add argparse for command-line argument parsing
+- [x] Implement `--dry-run` flag
+- [x] Implement `--config <path>` for custom config file
+- [x] Implement `--video-id <id>` to process specific video
+- [x] Implement `--game <name>` to filter by game
+- [x] Implement `--limit <n>` to process only N videos
+- [x] Implement `--force` to reprocess already-processed videos
+- [x] Create default config.yml template
+- [x] Add config file validation
+- [x] Add `--version` flag
+- [x] Add `--list-games` to show detected games with counts
 
 **Files to modify:**
 - `youtube_boss_titles.py` (main function)
@@ -40,17 +40,17 @@ python youtube_boss_titles.py --game "Bloodborne" --limit 5
 ```
 
 ### 1.2 Resume & Recovery System
-**Priority:** High | **Effort:** Medium | **Status:** 🔴
+**Priority:** High | **Effort:** Medium | **Status:** 🟢
 
 **Tasks:**
-- [ ] Create local SQLite database for tracking processed videos
-- [ ] Store processing state (pending, processing, completed, failed)
-- [ ] Check Google Sheets log before processing (avoid duplicates)
-- [ ] Add `--resume` flag to continue from last run
-- [ ] Store partial results on crash
-- [ ] Implement retry logic with exponential backoff for API failures
-- [ ] Add max retry configuration (default: 3)
-- [ ] Store failed videos separately for later retry
+- [x] Create local SQLite database for tracking processed videos
+- [x] Store processing state (pending, processing, completed, failed)
+- [x] Check Google Sheets log before processing (avoid duplicates)
+- [x] Add `--resume` flag to continue from last run
+- [x] Store partial results on crash
+- [x] Implement retry logic with exponential backoff for API failures
+- [x] Add max retry configuration (default: 3)
+- [x] Store failed videos separately for later retry
 
 **Files to modify:**
 - New: `database.py` (SQLite operations)
@@ -75,16 +75,16 @@ CREATE TABLE processed_videos (
 ```
 
 ### 1.3 Progress Tracking & UI
-**Priority:** High | **Effort:** Small | **Status:** 🔴
+**Priority:** High | **Effort:** Small | **Status:** 🟢
 
 **Tasks:**
-- [ ] Add `rich` library to requirements.txt
-- [ ] Implement progress bar with `rich.progress`
-- [ ] Show real-time statistics (processed, failed, skipped)
-- [ ] Display estimated time remaining
-- [ ] Add colored output for different message types
-- [ ] Show cost estimation before starting
-- [ ] Add summary report at the end
+- [x] Add `rich` library to requirements.txt
+- [x] Implement progress bar with `rich.progress`
+- [x] Show real-time statistics (processed, failed, skipped)
+- [x] Display estimated time remaining
+- [x] Add colored output for different message types
+- [x] Show cost estimation before starting
+- [x] Add summary report at the end
 
 **Files to modify:**
 - `requirements.txt` (add rich)
