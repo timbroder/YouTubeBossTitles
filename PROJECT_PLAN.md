@@ -455,7 +455,7 @@ CREATE TABLE processed_videos (
 - New: `thumbnail_generator.py`
 - `requirements.txt` (add PIL/Pillow)
 
-### 8.5 Bulk Operations
+### 8.3 Bulk Operations
 **Priority:** Low | **Effort:** Small | **Status:** 🔴
 
 **Tasks:**
