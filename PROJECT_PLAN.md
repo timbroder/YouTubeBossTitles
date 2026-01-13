@@ -443,7 +443,7 @@ CREATE TABLE processed_videos (
 **Files to modify:**
 - `youtube_boss_titles.py` (add description updates)
 
-### 8.3 Thumbnail Management
+### 8.2 Thumbnail Management
 **Priority:** Low | **Effort:** Medium | **Status:** 🔴
 
 **Tasks:**
