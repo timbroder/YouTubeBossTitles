@@ -455,19 +455,6 @@ CREATE TABLE processed_videos (
 - New: `thumbnail_generator.py`
 - `requirements.txt` (add PIL/Pillow)
 
-### 8.4 Multi-language Support
-**Priority:** Low | **Effort:** Large | **Status:** 🔴
-
-**Tasks:**
-- [ ] Detect video language
-- [ ] Support multiple languages for titles
-- [ ] Use OpenAI for translations
-- [ ] Add language configuration
-
-**Files to modify:**
-- New: `translations.py`
-- `youtube_boss_titles.py` (i18n support)
-
 ### 8.5 Bulk Operations
 **Priority:** Low | **Effort:** Small | **Status:** 🔴
 
