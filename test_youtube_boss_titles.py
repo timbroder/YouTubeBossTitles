@@ -30,7 +30,10 @@ def updater(mock_config):
     """Create a YouTubeBossUpdater instance with mocked OpenAI client"""
     with patch('youtube_boss_titles.openai.OpenAI'):
         with patch('youtube_boss_titles.VideoDatabase'):
-            return YouTubeBossUpdater(config=mock_config, db_path=':memory:')
+            # Create a mock logger
+            import logging
+            mock_logger = logging.getLogger('test_logger')
+            return YouTubeBossUpdater(config=mock_config, logger_instance=mock_logger, db_path=':memory:')
 
 
 @pytest.fixture
@@ -668,6 +671,163 @@ class TestEdgeCases:
         result = updater.identify_boss('video123', 'Bloodborne')
 
         assert result is None
+
+
+# ============================================================================
+# SPRINT 2: LOGGING AND ERROR TRACKING TESTS
+# ============================================================================
+
+class TestLogging:
+    """Tests for structured logging functionality"""
+
+    def test_logger_initialization(self, updater):
+        """Test that updater is initialized with a logger"""
+        assert updater.logger is not None
+        assert hasattr(updater.logger, 'info')
+        assert hasattr(updater.logger, 'error')
+        assert hasattr(updater.logger, 'warning')
+
+    def test_error_logging_in_process_video(self, updater):
+        """Test that errors are logged when processing fails"""
+        updater.is_default_ps5_title = Mock(return_value=True)
+        updater.extract_game_name = Mock(return_value='TestGame')
+        updater.identify_boss = Mock(side_effect=Exception('Test error'))
+        updater.db = Mock()
+        updater.db.get_video = Mock(return_value=None)
+        updater.db.add_video = Mock()
+        updater.db.update_video_status = Mock()
+        updater.log_error_to_sheet = Mock()
+
+        video = {'id': 'test123', 'title': 'TestGame_20240101120000'}
+
+        result = updater.process_video(video, force=False)
+
+        assert result is False
+        updater.db.update_video_status.assert_called()
+        updater.log_error_to_sheet.assert_called_once()
+
+
+class TestErrorTracking:
+    """Tests for enhanced error tracking to Google Sheets"""
+
+    def test_error_sheet_setup(self, updater):
+        """Test that error sheet is created during setup"""
+        mock_spreadsheet = Mock()
+        mock_sheet = Mock()
+        mock_error_sheet = Mock()
+
+        updater.sheets_client = Mock()
+        updater.sheets_client.open = Mock(side_effect=Exception("Not found"))
+        updater.sheets_client.create = Mock(return_value=mock_spreadsheet)
+
+        mock_spreadsheet.sheet1 = mock_sheet
+        mock_spreadsheet.add_worksheet = Mock(return_value=mock_error_sheet)
+
+        updater.setup_log_spreadsheet()
+
+        # Verify error sheet was created
+        mock_spreadsheet.add_worksheet.assert_called_with(title="Errors", rows="1000", cols="10")
+        assert updater.error_sheet is not None
+
+    def test_log_error_to_sheet(self, updater):
+        """Test logging errors to the Errors sheet"""
+        mock_error_sheet = Mock()
+        updater.error_sheet = mock_error_sheet
+
+        updater.log_error_to_sheet(
+            video_id='test123',
+            video_title='Test Video',
+            game_name='TestGame',
+            error_type='test_error',
+            error_message='Test error message',
+            attempts=3
+        )
+
+        # Verify append_row was called
+        mock_error_sheet.append_row.assert_called_once()
+        call_args = mock_error_sheet.append_row.call_args[0][0]
+
+        # Verify row structure
+        assert call_args[1] == 'test123'  # video_id
+        assert call_args[2] == 'Test Video'  # video_title
+        assert call_args[3] == 'TestGame'  # game_name
+        assert call_args[4] == 'test_error'  # error_type
+        assert call_args[5] == 'Test error message'  # error_message
+        assert call_args[6] == 3  # attempts
+        assert 'youtube.com/watch?v=test123' in call_args[7]  # video_link
+
+    def test_log_error_to_sheet_truncates_long_messages(self, updater):
+        """Test that long error messages are truncated"""
+        mock_error_sheet = Mock()
+        updater.error_sheet = mock_error_sheet
+
+        long_message = 'A' * 1000  # 1000 character message
+
+        updater.log_error_to_sheet(
+            video_id='test123',
+            video_title='Test Video',
+            game_name='TestGame',
+            error_type='test_error',
+            error_message=long_message,
+            attempts=1
+        )
+
+        call_args = mock_error_sheet.append_row.call_args[0][0]
+        error_message = call_args[5]
+
+        # Should be truncated to 500 chars + "..."
+        assert len(error_message) <= 503
+        assert error_message.endswith('...')
+
+    def test_log_error_to_sheet_without_error_sheet(self, updater):
+        """Test that logging errors handles missing error sheet gracefully"""
+        updater.error_sheet = None
+        updater.logger = Mock()
+
+        # Should not raise exception
+        updater.log_error_to_sheet(
+            video_id='test123',
+            video_title='Test Video',
+            game_name='TestGame',
+            error_type='test_error',
+            error_message='Test error',
+            attempts=1
+        )
+
+        # Should log a warning
+        updater.logger.warning.assert_called()
+
+
+class TestErrorMessages:
+    """Tests for better error messages functionality"""
+
+    def test_format_error_with_code(self):
+        """Test error message formatting"""
+        from error_messages import format_error, ErrorCode
+
+        error_msg = format_error(ErrorCode.CONFIG_NOT_FOUND)
+
+        assert ErrorCode.CONFIG_NOT_FOUND in error_msg
+        assert 'Configuration file not found' in error_msg
+        assert '💡 Hint:' in error_msg
+
+    def test_format_error_with_details(self):
+        """Test error message formatting with details"""
+        from error_messages import format_error, ErrorCode
+
+        error_msg = format_error(ErrorCode.AUTH_FAILED, 'Invalid credentials')
+
+        assert 'Invalid credentials' in error_msg
+        assert 'Details:' in error_msg
+
+    def test_get_error_hint(self):
+        """Test getting error hint"""
+        from error_messages import get_error_hint, ErrorCode
+
+        hint = get_error_hint(ErrorCode.OPENAI_API_ERROR)
+
+        assert hint
+        assert 'API key' in hint or 'credits' in hint
 
 
 if __name__ == '__main__':

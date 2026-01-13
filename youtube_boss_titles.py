@@ -29,16 +29,22 @@ import gspread
 
 from config import Config
 from database import VideoDatabase, exponential_backoff
+from logging_config import setup_logging, log_api_call, log_cost, log_error
+from error_messages import format_error, ErrorCode
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
 from rich.table import Table
 from rich.panel import Panel
 from rich import box
+import logging
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 # Initialize rich console
 console = Console()
+
+# Logger will be initialized in main() with user preferences
+logger = None
 
 
 # API scopes
@@ -67,17 +73,19 @@ SOULSLIKE_GAMES = [
 
 
 class YouTubeBossUpdater:
-    def __init__(self, config: Config, db_path: str = 'processed_videos.db'):
+    def __init__(self, config: Config, logger_instance: logging.Logger = None, db_path: str = 'processed_videos.db'):
         """Initialize the updater with configuration"""
         self.config = config
         self.youtube = None
         self.sheets_client = None
         self.log_sheet = None
+        self.error_sheet = None  # Separate sheet for errors
         self.log_spreadsheet_name = config.get('youtube.log_spreadsheet_name')
         self.openai_client = openai.OpenAI(api_key=config.get('openai.api_key'))
         self.processed_videos = set()  # Track processed video IDs from sheets
         self.db = VideoDatabase(db_path)
         self.max_retries = config.get('processing.retry.max_attempts', 3)
+        self.logger = logger_instance or logging.getLogger('youtube_boss_updater')
 
     def authenticate_youtube(self):
         """Authenticate with YouTube API"""
@@ -105,10 +113,12 @@ class YouTubeBossUpdater:
 
         self.youtube = build('youtube', 'v3', credentials=creds)
         print("✓ YouTube authentication successful")
+        self.logger.info("YouTube API authentication successful")
 
         # Initialize Google Sheets client
         self.sheets_client = gspread.authorize(creds)
         print("✓ Google Sheets authentication successful")
+        self.logger.info("Google Sheets authentication successful")
 
     def setup_log_spreadsheet(self):
         """Create or open the log spreadsheet and set up headers"""
@@ -118,14 +128,22 @@ class YouTubeBossUpdater:
             self.log_sheet = spreadsheet.sheet1
             print(f"✓ Opened existing log spreadsheet: {self.log_spreadsheet_name}")
 
+            # Try to get or create the Errors sheet
+            try:
+                self.error_sheet = spreadsheet.worksheet("Errors")
+            except gspread.exceptions.WorksheetNotFound:
+                self.error_sheet = spreadsheet.add_worksheet(title="Errors", rows="1000", cols="10")
+                self._setup_error_sheet_headers()
+
             # Load already processed video IDs from sheets
             self._load_processed_videos()
         except gspread.exceptions.SpreadsheetNotFound:
             # Create new spreadsheet
             spreadsheet = self.sheets_client.create(self.log_spreadsheet_name)
             self.log_sheet = spreadsheet.sheet1
+            self.log_sheet.update_title("Processed Videos")
 
-            # Set up headers
+            # Set up headers for main sheet
             headers = [
                 'Timestamp',
                 'Original Title',
@@ -139,8 +157,30 @@ class YouTubeBossUpdater:
             # Format header row (bold)
             self.log_sheet.format('A1:F1', {'textFormat': {'bold': True}})
 
+            # Create and setup errors sheet
+            self.error_sheet = spreadsheet.add_worksheet(title="Errors", rows="1000", cols="10")
+            self._setup_error_sheet_headers()
+
             print(f"✓ Created new log spreadsheet: {self.log_spreadsheet_name}")
             print(f"  Spreadsheet URL: {spreadsheet.url}")
+
+    def _setup_error_sheet_headers(self):
+        """Setup headers for the Errors sheet"""
+        if not self.error_sheet:
+            return
+
+        error_headers = [
+            'Timestamp',
+            'Video ID',
+            'Video Title',
+            'Game Name',
+            'Error Type',
+            'Error Message',
+            'Attempts',
+            'Video Link'
+        ]
+        self.error_sheet.append_row(error_headers)
+        self.error_sheet.format('A1:H1', {'textFormat': {'bold': True}})
 
     def _load_processed_videos(self):
         """Load video IDs that have already been processed from Google Sheets"""
@@ -186,6 +226,39 @@ class YouTubeBossUpdater:
 
         except Exception as e:
             print(f"  ⚠ Warning: Failed to log to spreadsheet: {e}")
+
+    def log_error_to_sheet(self, video_id: str, video_title: str, game_name: str,
+                          error_type: str, error_message: str, attempts: int = 1):
+        """Log error to Google Sheets Errors tab"""
+        if not self.error_sheet:
+            self.logger.warning("Error sheet not initialized, skipping error logging")
+            return
+
+        try:
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            video_link = f"https://www.youtube.com/watch?v={video_id}"
+
+            # Truncate error message if too long
+            max_error_length = 500
+            if len(error_message) > max_error_length:
+                error_message = error_message[:max_error_length] + "..."
+
+            row = [
+                timestamp,
+                video_id,
+                video_title,
+                game_name,
+                error_type,
+                error_message,
+                attempts,
+                video_link
+            ]
+
+            self.error_sheet.append_row(row)
+            self.logger.debug(f"Logged error to spreadsheet for video {video_id}")
+
+        except Exception as e:
+            self.logger.warning(f"Failed to log error to spreadsheet: {e}")
 
     def is_default_ps5_title(self, title: str) -> bool:
         """Check if video title matches PS5 default pattern"""
@@ -397,33 +470,41 @@ Boss name:"""
         Includes retry logic with exponential backoff
         """
         print(f"  Analyzing video {video_id} for boss identification...")
+        self.logger.info(f"Starting boss identification for video {video_id}", extra={'video_id': video_id, 'game_name': game_name})
 
         try:
             # Step 1: Try with thumbnail first (fast and free)
             print(f"  Trying thumbnail first...")
+            log_api_call(self.logger, 'youtube_thumbnail', video_id)
             thumbnail_url = self.get_video_thumbnail_url(video_id)
             boss_name = self.identify_boss_from_images([thumbnail_url], game_name)
 
             if boss_name:
                 print(f"  ✓ Identified boss from thumbnail: {boss_name}")
+                self.logger.info(f"Boss identified from thumbnail: {boss_name}", extra={'video_id': video_id, 'game_name': game_name})
                 return boss_name
 
             # Step 2: Thumbnail didn't work, extract actual video frames
             print(f"  Thumbnail didn't work, extracting frames from video...")
+            self.logger.debug("Thumbnail identification failed, extracting video frames", extra={'video_id': video_id})
             frames = self.extract_video_frames(video_id)
 
             if not frames:
                 print(f"  ✗ Could not extract frames from video")
+                log_error(self.logger, 'frame_extraction_failed', 'Could not extract frames from video', video_id=video_id, game_name=game_name)
                 return None
 
             # Try to identify boss from extracted frames
+            log_api_call(self.logger, 'openai_vision_frames', video_id, frame_count=len(frames))
             boss_name = self.identify_boss_from_images(frames, game_name)
 
             if boss_name:
                 print(f"  ✓ Identified boss from video frames: {boss_name}")
+                self.logger.info(f"Boss identified from frames: {boss_name}", extra={'video_id': video_id, 'game_name': game_name})
                 return boss_name
             else:
                 print(f"  ✗ Could not identify boss even from video frames")
+                log_error(self.logger, 'boss_identification_failed', 'Could not identify boss from video frames', video_id=video_id, game_name=game_name)
                 return None
 
         except Exception as e:
@@ -432,10 +513,12 @@ Boss name:"""
                 delay = exponential_backoff(attempt)
                 print(f"  ⚠ Error: {e}")
                 print(f"  Retrying in {delay:.1f} seconds (attempt {attempt + 1}/{self.max_retries})...")
+                self.logger.warning(f"Retry {attempt + 1}/{self.max_retries} after error: {e}", extra={'video_id': video_id})
                 time.sleep(delay)
                 return self.identify_boss(video_id, game_name, attempt + 1)
             else:
                 print(f"  ✗ Failed after {self.max_retries} attempts: {e}")
+                log_error(self.logger, 'max_retries_exceeded', f'Failed after {self.max_retries} attempts: {e}', video_id=video_id, game_name=game_name, exc_info=True)
                 raise
 
     def format_title(self, game_name: str, boss_name: str) -> str:
@@ -587,9 +670,18 @@ Boss name:"""
             boss_name = self.identify_boss(video_id, game_name)
             if not boss_name:
                 print("  ⊘ Could not identify boss")
+                error_msg = 'Could not identify boss from video'
                 self.db.update_video_status(
                     video_id, 'failed',
-                    error_message='Could not identify boss from video'
+                    error_message=error_msg
+                )
+                self.log_error_to_sheet(
+                    video_id=video_id,
+                    video_title=title,
+                    game_name=game_name,
+                    error_type='boss_identification_failed',
+                    error_message=error_msg,
+                    attempts=1
                 )
                 return False
 
@@ -601,9 +693,18 @@ Boss name:"""
 
             # Update title
             if not self.update_video_title(video_id, new_title):
+                error_msg = 'Failed to update video title'
                 self.db.update_video_status(
                     video_id, 'failed',
-                    error_message='Failed to update video title'
+                    error_message=error_msg
+                )
+                self.log_error_to_sheet(
+                    video_id=video_id,
+                    video_title=title,
+                    game_name=game_name,
+                    error_type='title_update_failed',
+                    error_message=error_msg,
+                    attempts=1
                 )
                 return False
 
@@ -635,9 +736,32 @@ Boss name:"""
 
         except Exception as e:
             print(f"  ✗ Error processing video: {e}")
+            log_error(
+                self.logger,
+                error_type='processing_error',
+                message=f"Error processing video: {e}",
+                video_id=video_id,
+                game_name=game_name,
+                exc_info=True
+            )
+
+            # Get attempts from database
+            db_record = self.db.get_video(video_id)
+            attempts = db_record['attempts'] if db_record else 1
+
             self.db.update_video_status(
                 video_id, 'failed',
                 error_message=str(e)
+            )
+
+            # Log error to Google Sheets
+            self.log_error_to_sheet(
+                video_id=video_id,
+                video_title=title,
+                game_name=game_name,
+                error_type='processing_error',
+                error_message=str(e),
+                attempts=attempts
             )
             return False
 
@@ -979,27 +1103,63 @@ Examples:
         help='Resume processing pending and failed videos from database'
     )
 
+    parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Enable verbose output (DEBUG level logging)'
+    )
+
+    parser.add_argument(
+        '--quiet', '-q',
+        action='store_true',
+        help='Minimal output (WARNING level and above only)'
+    )
+
     args = parser.parse_args()
+
+    # Setup logging
+    global logger
+    logger = setup_logging(
+        log_level='INFO',
+        verbose=args.verbose,
+        quiet=args.quiet,
+        console_output=True,
+        json_format=True
+    )
+
+    logger.info(f"YouTube Boss Title Updater v{__version__} starting")
 
     # Load configuration
     try:
         config = Config(config_path=args.config)
         config.validate()
+        logger.info("Configuration loaded and validated")
     except FileNotFoundError as e:
-        print(f"Error: {e}")
+        error_msg = format_error(ErrorCode.CONFIG_NOT_FOUND, str(e))
+        console.print(f"\n[red]{error_msg}[/red]\n")
+        logger.error(f"Configuration file not found: {e}")
         return 1
     except ValueError as e:
-        print(f"Configuration Error: {e}")
+        error_msg = format_error(ErrorCode.CONFIG_INVALID, str(e))
+        console.print(f"\n[red]{error_msg}[/red]\n")
+        logger.error(f"Configuration validation error: {e}")
         return 1
 
     # Create updater
-    updater = YouTubeBossUpdater(config)
+    updater = YouTubeBossUpdater(config, logger_instance=logger)
 
     # Authenticate first
     try:
         updater.authenticate_youtube()
+    except FileNotFoundError as e:
+        error_msg = format_error(ErrorCode.CLIENT_SECRET_NOT_FOUND, str(e))
+        console.print(f"\n[red]{error_msg}[/red]\n")
+        logger.error(f"Client secret not found: {e}", exc_info=True)
+        return 1
     except Exception as e:
-        print(f"Authentication failed: {e}")
+        error_msg = format_error(ErrorCode.AUTH_FAILED, str(e))
+        console.print(f"\n[red]{error_msg}[/red]\n")
+        logger.error(f"Authentication failed: {e}", exc_info=True)
         return 1
 
     # Handle --list-games
@@ -1017,11 +1177,14 @@ Examples:
             force=args.force,
             resume=args.resume
         )
+        logger.info("Processing completed successfully")
     except KeyboardInterrupt:
         print("\n\nProcess interrupted by user")
+        logger.warning("Process interrupted by user")
         return 130
     except Exception as e:
         print(f"\nError during execution: {e}")
+        logger.critical(f"Fatal error during execution: {e}", exc_info=True)
         import traceback
         traceback.print_exc()
         return 1
