@@ -320,6 +320,8 @@ class TestBossIdentification:
 
         updater.openai_client.chat.completions.create = Mock(return_value=mock_response)
         updater.get_video_thumbnail_url = Mock(return_value='http://thumbnail.jpg')
+        # Mock cache miss
+        updater.db.get_cached_boss = Mock(return_value=None)
 
         boss_name = updater.identify_boss('video123', 'Bloodborne')
 
@@ -339,6 +341,8 @@ class TestBossIdentification:
         )
         updater.get_video_thumbnail_url = Mock(return_value='http://thumbnail.jpg')
         updater.extract_video_frames = Mock(return_value=['frame1', 'frame2'])
+        # Mock cache miss
+        updater.db.get_cached_boss = Mock(return_value=None)
 
         boss_name = updater.identify_boss('video123', 'Bloodborne')
 
@@ -667,6 +671,8 @@ class TestEdgeCases:
         updater.openai_client.chat.completions.create = Mock(return_value=mock_response)
 
         updater.extract_video_frames = Mock(return_value=[])
+        # Mock cache miss
+        updater.db.get_cached_boss = Mock(return_value=None)
 
         result = updater.identify_boss('video123', 'Bloodborne')
 
@@ -833,6 +839,213 @@ class TestErrorMessages:
 
         assert hint
         assert 'API key' in hint or 'credits' in hint
+
+
+# ============================================================================
+# SPRINT 3 TESTS - Caching and Parallel Processing
+# ============================================================================
+
+class TestCachingSystem:
+    """Tests for Sprint 3 caching system"""
+
+    def test_cache_boss_identification(self):
+        """Test caching boss identification results"""
+        from database import VideoDatabase
+
+        db = VideoDatabase(':memory:')
+
+        # Cache a boss identification
+        result = db.cache_boss('video123', 'Bloodborne', 'Father Gascoigne', source='thumbnail', expiry_days=30)
+        assert result is True
+
+        # Retrieve cached result
+        cached = db.get_cached_boss('video123', 'Bloodborne')
+        assert cached is not None
+        assert cached['boss_name'] == 'Father Gascoigne'
+        assert cached['source'] == 'thumbnail'
+        assert cached['accessed_count'] == 1
+
+    def test_cache_access_count(self):
+        """Test cache access count increments"""
+        from database import VideoDatabase
+
+        db = VideoDatabase(':memory:')
+
+        # Cache a result
+        db.cache_boss('video456', 'Elden Ring', 'Margit', source='frames', expiry_days=30)
+
+        # Access multiple times
+        for _ in range(3):
+            cached = db.get_cached_boss('video456', 'Elden Ring')
+
+        # Check access count
+        cached = db.get_cached_boss('video456', 'Elden Ring')
+        assert cached['accessed_count'] == 4  # 3 previous + 1 current
+
+    def test_cache_expiry(self):
+        """Test cache expiry functionality"""
+        from database import VideoDatabase
+        from datetime import datetime, timedelta
+
+        db = VideoDatabase(':memory:')
+
+        # Cache with 0 days expiry (immediate expiry)
+        db.cache_boss('video789', 'Dark Souls', 'Ornstein', source='frames', expiry_days=0)
+
+        # Should not retrieve expired cache
+        cached = db.get_cached_boss('video789', 'Dark Souls')
+        assert cached is None
+
+    def test_clear_cache(self):
+        """Test clearing all cache"""
+        from database import VideoDatabase
+
+        db = VideoDatabase(':memory:')
+
+        # Add multiple cache entries
+        db.cache_boss('v1', 'Game1', 'Boss1', expiry_days=30)
+        db.cache_boss('v2', 'Game2', 'Boss2', expiry_days=30)
+        db.cache_boss('v3', 'Game3', 'Boss3', expiry_days=0)  # Expired
+
+        # Clear cache
+        total, expired = db.clear_cache()
+
+        assert total == 3
+        assert expired == 1
+
+        # Verify cache is empty
+        stats = db.get_cache_statistics()
+        assert stats['total'] == 0
+
+    def test_cleanup_expired_cache(self):
+        """Test cleanup of expired cache entries"""
+        from database import VideoDatabase
+
+        db = VideoDatabase(':memory:')
+
+        # Add both valid and expired entries
+        db.cache_boss('v1', 'Game1', 'Boss1', expiry_days=30)
+        db.cache_boss('v2', 'Game2', 'Boss2', expiry_days=0)  # Expired
+
+        # Cleanup expired
+        cleaned = db.cleanup_expired_cache()
+
+        assert cleaned == 1
+
+        # Verify valid entry still exists
+        cached = db.get_cached_boss('v1', 'Game1')
+        assert cached is not None
+
+    def test_cache_statistics(self):
+        """Test cache statistics reporting"""
+        from database import VideoDatabase
+
+        db = VideoDatabase(':memory:')
+
+        # Add entries
+        db.cache_boss('v1', 'Game1', 'Boss1', expiry_days=30)
+        db.cache_boss('v2', 'Game2', 'Boss2', expiry_days=0)  # Expired
+
+        # Access one multiple times
+        for _ in range(5):
+            db.get_cached_boss('v1', 'Game1')
+
+        stats = db.get_cache_statistics()
+
+        assert stats['total'] == 2
+        assert stats['active'] == 1
+        assert stats['expired'] == 1
+        # cache_boss sets accessed_count to 1, then 5 get_cached_boss calls add 5 more = 6 total
+        assert stats['max_accessed'] == 6
+
+    def test_cache_integration_with_identify_boss(self, mock_config):
+        """Test cache integration with boss identification"""
+        with patch('youtube_boss_titles.openai.OpenAI'):
+            with patch('youtube_boss_titles.VideoDatabase') as MockDB:
+                import logging
+                mock_logger = logging.getLogger('test_logger')
+
+                # Setup mock database
+                mock_db = MockDB.return_value
+                mock_db.get_cached_boss.return_value = {
+                    'boss_name': 'Cached Boss',
+                    'source': 'thumbnail'
+                }
+
+                updater = YouTubeBossUpdater(config=mock_config, logger_instance=mock_logger, db_path=':memory:')
+
+                # Call identify_boss - should hit cache
+                with patch.object(updater, 'identify_boss_from_images'):
+                    boss_name = updater.identify_boss('video123', 'TestGame')
+
+                # Verify cache was checked
+                mock_db.get_cached_boss.assert_called_once()
+                assert boss_name == 'Cached Boss'
+
+
+class TestParallelProcessing:
+    """Tests for Sprint 3 parallel processing"""
+
+    def test_parallel_processing_enabled_via_config(self, mock_config):
+        """Test parallel processing can be enabled via config"""
+        mock_config.config['processing']['parallel']['enabled'] = True
+        mock_config.config['processing']['parallel']['workers'] = 3
+
+        assert mock_config.get('processing.parallel.enabled') is True
+        assert mock_config.get('processing.parallel.workers') == 3
+
+    def test_parallel_processing_disabled_by_default(self, mock_config):
+        """Test parallel processing is disabled by default"""
+        assert mock_config.get('processing.parallel.enabled') is False
+
+    def test_workers_parameter_in_run(self, mock_config):
+        """Test workers parameter is accepted in run method"""
+        with patch('youtube_boss_titles.openai.OpenAI'):
+            with patch('youtube_boss_titles.VideoDatabase'):
+                import logging
+                mock_logger = logging.getLogger('test_logger')
+                updater = YouTubeBossUpdater(config=mock_config, logger_instance=mock_logger, db_path=':memory:')
+
+                # Mock authentication and sheets
+                updater.youtube = Mock()
+                updater.sheets_client = Mock()
+
+                # Mock get_my_videos to return empty list
+                with patch.object(updater, 'get_my_videos', return_value=[]):
+                    with patch.object(updater, 'authenticate_youtube'):
+                        # Should not raise error with workers parameter
+                        updater.run(dry_run=True, workers=3)
+
+    def test_process_video_list_respects_workers_param(self, updater):
+        """Test _process_video_list respects workers parameter"""
+        videos = [
+            {'id': 'v1', 'title': 'Test_20250101000000', 'published_at': '2025-01-01T00:00:00Z'}
+        ]
+
+        # Mock the parallel processing method
+        with patch.object(updater, '_process_video_list_parallel') as mock_parallel:
+            updater._process_video_list(videos, dry_run=False, force=False, workers=5)
+
+            # Should call parallel processing with 5 workers
+            mock_parallel.assert_called_once_with(videos, False, 5)
+
+
+class TestConfigurationUpdates:
+    """Tests for Sprint 3 configuration updates"""
+
+    def test_cache_config_defaults(self):
+        """Test cache configuration has proper defaults"""
+        config = Config()
+
+        assert config.get('processing.cache.enabled') is True
+        assert config.get('processing.cache.expiry_days') == 30
+
+    def test_parallel_config_defaults(self):
+        """Test parallel processing configuration has proper defaults"""
+        config = Config()
+
+        assert config.get('processing.parallel.enabled') is False
+        assert config.get('processing.parallel.workers') == 3
 
 
 if __name__ == '__main__':

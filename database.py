@@ -17,6 +17,11 @@ class VideoDatabase:
     def __init__(self, db_path: str = 'processed_videos.db'):
         """Initialize database connection"""
         self.db_path = db_path
+        # For in-memory databases, keep a persistent connection
+        self._memory_connection = None
+        if db_path == ':memory:':
+            self._memory_connection = sqlite3.connect(db_path)
+            self._memory_connection.row_factory = sqlite3.Row
         self._initialize_database()
 
     def _initialize_database(self):
@@ -51,17 +56,46 @@ class VideoDatabase:
                 CREATE INDEX IF NOT EXISTS idx_game_name ON processed_videos(game_name)
             ''')
 
+            # Create cache table for OpenAI responses
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS boss_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    video_id TEXT,
+                    game_name TEXT,
+                    boss_name TEXT,
+                    source TEXT,  -- 'thumbnail' or 'frames'
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP,
+                    accessed_count INTEGER DEFAULT 0,
+                    last_accessed TIMESTAMP
+                )
+            ''')
+
+            # Create index on video_id for cache lookup
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cache_video_id ON boss_cache(video_id)
+            ''')
+
+            # Create index on expires_at for cleanup
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cache_expires ON boss_cache(expires_at)
+            ''')
+
             conn.commit()
 
     @contextmanager
     def get_connection(self):
         """Context manager for database connections"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row  # Enable column access by name
-        try:
-            yield conn
-        finally:
-            conn.close()
+        # Use persistent connection for in-memory databases
+        if self._memory_connection is not None:
+            yield self._memory_connection
+        else:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row  # Enable column access by name
+            try:
+                yield conn
+            finally:
+                conn.close()
 
     def add_video(self, video_id: str, original_title: str, game_name: str,
                   status: str = 'pending') -> bool:
@@ -249,6 +283,150 @@ class VideoDatabase:
         except sqlite3.Error as e:
             print(f"Database error deleting video {video_id}: {e}")
             return False
+
+    # Cache-related methods
+
+    def _generate_cache_key(self, video_id: str, game_name: str) -> str:
+        """Generate cache key for boss identification"""
+        import hashlib
+        key = f"{video_id}:{game_name}"
+        return hashlib.sha256(key.encode()).hexdigest()
+
+    def get_cached_boss(self, video_id: str, game_name: str) -> Optional[Dict]:
+        """Get cached boss identification result"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cache_key = self._generate_cache_key(video_id, game_name)
+
+                # Get cache entry
+                cursor.execute('''
+                    SELECT * FROM boss_cache
+                    WHERE cache_key = ? AND (expires_at IS NULL OR expires_at > ?)
+                ''', (cache_key, datetime.now().isoformat()))
+
+                row = cursor.fetchone()
+                if not row:
+                    return None
+
+                # Update access count and timestamp
+                cursor.execute('''
+                    UPDATE boss_cache
+                    SET accessed_count = accessed_count + 1,
+                        last_accessed = ?
+                    WHERE cache_key = ?
+                ''', (datetime.now().isoformat(), cache_key))
+                conn.commit()
+
+                return dict(row)
+        except sqlite3.Error as e:
+            print(f"Database error getting cached boss for {video_id}: {e}")
+            return None
+
+    def cache_boss(self, video_id: str, game_name: str, boss_name: str,
+                   source: str = 'frames', expiry_days: int = 30) -> bool:
+        """Cache boss identification result"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cache_key = self._generate_cache_key(video_id, game_name)
+
+                # Calculate expiry date
+                from datetime import timedelta
+                expires_at = (datetime.now() + timedelta(days=expiry_days)).isoformat()
+
+                cursor.execute('''
+                    INSERT OR REPLACE INTO boss_cache
+                    (cache_key, video_id, game_name, boss_name, source, expires_at, last_accessed, accessed_count)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+                ''', (cache_key, video_id, game_name, boss_name, source, expires_at,
+                      datetime.now().isoformat()))
+                conn.commit()
+                return True
+        except sqlite3.Error as e:
+            print(f"Database error caching boss for {video_id}: {e}")
+            return False
+
+    def clear_cache(self) -> Tuple[int, int]:
+        """
+        Clear all cache entries
+        Returns: (total_cleared, expired_cleared)
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Count expired entries
+                cursor.execute('''
+                    SELECT COUNT(*) as count FROM boss_cache
+                    WHERE expires_at IS NOT NULL AND expires_at <= ?
+                ''', (datetime.now().isoformat(),))
+                expired_count = cursor.fetchone()['count']
+
+                # Count total entries
+                cursor.execute('SELECT COUNT(*) as count FROM boss_cache')
+                total_count = cursor.fetchone()['count']
+
+                # Clear all cache
+                cursor.execute('DELETE FROM boss_cache')
+                conn.commit()
+
+                return (total_count, expired_count)
+        except sqlite3.Error as e:
+            print(f"Database error clearing cache: {e}")
+            return (0, 0)
+
+    def cleanup_expired_cache(self) -> int:
+        """Remove expired cache entries"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    DELETE FROM boss_cache
+                    WHERE expires_at IS NOT NULL AND expires_at <= ?
+                ''', (datetime.now().isoformat(),))
+                count = cursor.rowcount
+                conn.commit()
+                return count
+        except sqlite3.Error as e:
+            print(f"Database error cleaning up expired cache: {e}")
+            return 0
+
+    def get_cache_statistics(self) -> Dict[str, int]:
+        """Get cache statistics"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Total entries
+                cursor.execute('SELECT COUNT(*) as count FROM boss_cache')
+                total = cursor.fetchone()['count']
+
+                # Expired entries
+                cursor.execute('''
+                    SELECT COUNT(*) as count FROM boss_cache
+                    WHERE expires_at IS NOT NULL AND expires_at <= ?
+                ''', (datetime.now().isoformat(),))
+                expired = cursor.fetchone()['count']
+
+                # Active entries
+                active = total - expired
+
+                # Most accessed
+                cursor.execute('''
+                    SELECT MAX(accessed_count) as max_accessed FROM boss_cache
+                ''')
+                max_accessed = cursor.fetchone()['max_accessed'] or 0
+
+                return {
+                    'total': total,
+                    'active': active,
+                    'expired': expired,
+                    'max_accessed': max_accessed
+                }
+        except sqlite3.Error as e:
+            print(f"Database error getting cache statistics: {e}")
+            return {}
 
 
 def exponential_backoff(attempt: int, base_delay: float = 2.0, max_delay: float = 60.0) -> float:

@@ -5,6 +5,7 @@ Configuration handling for YouTube Boss Title Updater
 
 import os
 import yaml
+import copy
 from typing import Optional, Dict, Any
 from pathlib import Path
 
@@ -30,6 +31,14 @@ class Config:
             'retry': {
                 'max_attempts': 3,
                 'exponential_backoff': True
+            },
+            'cache': {
+                'enabled': True,
+                'expiry_days': 30
+            },
+            'parallel': {
+                'enabled': False,
+                'workers': 3
             }
         },
         'soulslike_games': [
@@ -52,7 +61,7 @@ class Config:
 
     def __init__(self, config_path: Optional[str] = None):
         """Initialize configuration from file or defaults"""
-        self.config = self.DEFAULT_CONFIG.copy()
+        self.config = copy.deepcopy(self.DEFAULT_CONFIG)
 
         if config_path:
             self.load_from_file(config_path)
@@ -179,6 +188,16 @@ processing:
   retry:
     max_attempts: 3
     exponential_backoff: true
+
+  # Caching settings
+  cache:
+    enabled: true
+    expiry_days: 30  # cache entries expire after 30 days
+
+  # Parallel processing settings
+  parallel:
+    enabled: false  # enable parallel processing
+    workers: 3  # number of concurrent workers
 
 # List of souls-like games that should get "Melee" tag
 soulslike_games:
