@@ -1,7 +1,7 @@
 # YouTube Boss Title Updater
 
 [![Tests](https://github.com/timbroder/YouTubeBossTitles/workflows/Tests/badge.svg)](https://github.com/timbroder/YouTubeBossTitles/actions)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 
 Automatically updates PS5 game video titles with boss names using AI vision analysis.
 
@@ -23,7 +23,7 @@ Automatically updates PS5 game video titles with boss names using AI vision anal
 
 ## Prerequisites
 
-- Python 3.8 or higher
+- Python 3.9 or higher
 - ffmpeg installed on your system (for video frame extraction)
 - YouTube channel with videos
 - Google Cloud account (for YouTube API and Google Sheets)
@@ -356,6 +356,68 @@ The spreadsheet will be created in your Google Drive and can be shared with othe
 - Make sure ffmpeg is installed and available in your PATH
 - Test with: `ffmpeg -version`
 - See installation instructions above
+
+## Development (Sprint 4: Code Quality)
+
+### Type Hints and Static Analysis
+
+The project now includes comprehensive type hints for all functions and methods:
+
+- **Type Hints**: All functions have complete type annotations
+- **Docstrings**: All public methods include detailed docstrings with examples
+- **MyPy**: Static type checking configured with `mypy.ini`
+
+Run type checking:
+```bash
+mypy --config-file mypy.ini .
+```
+
+### Code Formatting and Linting
+
+The project uses modern Python code quality tools:
+
+- **Black**: Opinionated code formatter (line length: 120)
+- **Ruff**: Fast Python linter with auto-fix
+- **Pre-commit**: Git hooks for automated checks
+
+#### Setup Pre-commit Hooks
+
+Install pre-commit hooks to automatically format and check code before commits:
+
+```bash
+# Install pre-commit hooks
+pre-commit install
+
+# Run hooks manually on all files
+pre-commit run --all-files
+```
+
+The pre-commit hooks will automatically:
+- Format code with Black
+- Lint and fix issues with Ruff
+- Check types with MyPy
+- Fix trailing whitespace and line endings
+- Validate YAML, JSON, and TOML files
+
+#### Manual Formatting
+
+Format code manually:
+```bash
+# Format all Python files
+black .
+
+# Lint and auto-fix issues
+ruff check --fix .
+
+# Type check
+mypy .
+```
+
+### Configuration Files
+
+- `mypy.ini` - MyPy type checker configuration
+- `pyproject.toml` - Black, Ruff, and pytest configuration
+- `.pre-commit-config.yaml` - Pre-commit hooks configuration
 
 ## Testing
 
