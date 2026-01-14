@@ -5,21 +5,20 @@ Tracks processed videos, their state, and errors
 """
 
 import sqlite3
-from datetime import datetime
-from typing import Optional, List, Dict, Tuple
 from contextlib import contextmanager
-from pathlib import Path
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple
 
 
 class VideoDatabase:
     """SQLite database for tracking processed videos"""
 
-    def __init__(self, db_path: str = 'processed_videos.db'):
+    def __init__(self, db_path: str = "processed_videos.db"):
         """Initialize database connection"""
         self.db_path = db_path
         # For in-memory databases, keep a persistent connection
         self._memory_connection = None
-        if db_path == ':memory:':
+        if db_path == ":memory:":
             self._memory_connection = sqlite3.connect(db_path)
             self._memory_connection.row_factory = sqlite3.Row
         self._initialize_database()
@@ -30,7 +29,8 @@ class VideoDatabase:
             cursor = conn.cursor()
 
             # Create processed_videos table
-            cursor.execute('''
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS processed_videos (
                     video_id TEXT PRIMARY KEY,
                     original_title TEXT,
@@ -44,20 +44,26 @@ class VideoDatabase:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            ''')
+            """
+            )
 
             # Create index on status for faster queries
-            cursor.execute('''
+            cursor.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_status ON processed_videos(status)
-            ''')
+            """
+            )
 
             # Create index on game_name for filtering
-            cursor.execute('''
+            cursor.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_game_name ON processed_videos(game_name)
-            ''')
+            """
+            )
 
             # Create cache table for OpenAI responses
-            cursor.execute('''
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS boss_cache (
                     cache_key TEXT PRIMARY KEY,
                     video_id TEXT,
@@ -69,17 +75,22 @@ class VideoDatabase:
                     accessed_count INTEGER DEFAULT 0,
                     last_accessed TIMESTAMP
                 )
-            ''')
+            """
+            )
 
             # Create index on video_id for cache lookup
-            cursor.execute('''
+            cursor.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_cache_video_id ON boss_cache(video_id)
-            ''')
+            """
+            )
 
             # Create index on expires_at for cleanup
-            cursor.execute('''
+            cursor.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_cache_expires ON boss_cache(expires_at)
-            ''')
+            """
+            )
 
             conn.commit()
 
@@ -97,18 +108,26 @@ class VideoDatabase:
             finally:
                 conn.close()
 
-    def add_video(self, video_id: str, original_title: str, game_name: str,
-                  status: str = 'pending') -> bool:
+    def add_video(self, video_id: str, original_title: str, game_name: str, status: str = "pending") -> bool:
         """Add a new video to track"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
+                cursor.execute(
+                    """
                     INSERT OR IGNORE INTO processed_videos
                     (video_id, original_title, game_name, status, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?)
-                ''', (video_id, original_title, game_name, status,
-                      datetime.now().isoformat(), datetime.now().isoformat()))
+                """,
+                    (
+                        video_id,
+                        original_title,
+                        game_name,
+                        status,
+                        datetime.now().isoformat(),
+                        datetime.now().isoformat(),
+                    ),
+                )
                 conn.commit()
                 return cursor.rowcount > 0
         except sqlite3.Error as e:
@@ -120,52 +139,56 @@ class VideoDatabase:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('SELECT * FROM processed_videos WHERE video_id = ?', (video_id,))
+                cursor.execute("SELECT * FROM processed_videos WHERE video_id = ?", (video_id,))
                 row = cursor.fetchone()
                 return dict(row) if row else None
         except sqlite3.Error as e:
             print(f"Database error getting video {video_id}: {e}")
             return None
 
-    def update_video_status(self, video_id: str, status: str,
-                           new_title: Optional[str] = None,
-                           boss_name: Optional[str] = None,
-                           error_message: Optional[str] = None) -> bool:
+    def update_video_status(
+        self,
+        video_id: str,
+        status: str,
+        new_title: Optional[str] = None,
+        boss_name: Optional[str] = None,
+        error_message: Optional[str] = None,
+    ) -> bool:
         """Update video status and related fields"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # Build update query dynamically
-                updates = ['status = ?', 'updated_at = ?']
+                updates = ["status = ?", "updated_at = ?"]
                 params = [status, datetime.now().isoformat()]
 
                 if new_title is not None:
-                    updates.append('new_title = ?')
+                    updates.append("new_title = ?")
                     params.append(new_title)
 
                 if boss_name is not None:
-                    updates.append('boss_name = ?')
+                    updates.append("boss_name = ?")
                     params.append(boss_name)
 
                 if error_message is not None:
-                    updates.append('error_message = ?')
+                    updates.append("error_message = ?")
                     params.append(error_message)
 
                 # Update last_attempt timestamp
-                updates.append('last_attempt = ?')
+                updates.append("last_attempt = ?")
                 params.append(datetime.now().isoformat())
 
                 # Increment attempts counter
-                updates.append('attempts = attempts + 1')
+                updates.append("attempts = attempts + 1")
 
                 params.append(video_id)
 
-                query = f'''
+                query = f"""
                     UPDATE processed_videos
                     SET {', '.join(updates)}
                     WHERE video_id = ?
-                '''
+                """
 
                 cursor.execute(query, params)
                 conn.commit()
@@ -179,7 +202,7 @@ class VideoDatabase:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('SELECT * FROM processed_videos WHERE status = ?', (status,))
+                cursor.execute("SELECT * FROM processed_videos WHERE status = ?", (status,))
                 return [dict(row) for row in cursor.fetchall()]
         except sqlite3.Error as e:
             print(f"Database error getting videos by status {status}: {e}")
@@ -190,11 +213,14 @@ class VideoDatabase:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
+                cursor.execute(
+                    """
                     SELECT * FROM processed_videos
                     WHERE status = 'failed' AND attempts < ?
                     ORDER BY last_attempt ASC
-                ''', (max_attempts,))
+                """,
+                    (max_attempts,),
+                )
                 return [dict(row) for row in cursor.fetchall()]
         except sqlite3.Error as e:
             print(f"Database error getting failed videos: {e}")
@@ -202,30 +228,32 @@ class VideoDatabase:
 
     def get_pending_videos(self) -> List[Dict]:
         """Get all pending videos"""
-        return self.get_videos_by_status('pending')
+        return self.get_videos_by_status("pending")
 
     def is_processed(self, video_id: str) -> bool:
         """Check if video has been successfully processed"""
         video = self.get_video(video_id)
-        return video is not None and video['status'] == 'completed'
+        return video is not None and video["status"] == "completed"
 
     def get_statistics(self) -> Dict[str, int]:
         """Get processing statistics"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
+                cursor.execute(
+                    """
                     SELECT
                         status,
                         COUNT(*) as count
                     FROM processed_videos
                     GROUP BY status
-                ''')
-                stats = {row['status']: row['count'] for row in cursor.fetchall()}
+                """
+                )
+                stats = {row["status"]: row["count"] for row in cursor.fetchall()}
 
                 # Get total count
-                cursor.execute('SELECT COUNT(*) as total FROM processed_videos')
-                stats['total'] = cursor.fetchone()['total']
+                cursor.execute("SELECT COUNT(*) as total FROM processed_videos")
+                stats["total"] = cursor.fetchone()["total"]
 
                 return stats
         except sqlite3.Error as e:
@@ -240,11 +268,14 @@ class VideoDatabase:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
+                cursor.execute(
+                    """
                     UPDATE processed_videos
                     SET status = 'pending', updated_at = ?
                     WHERE status = 'processing'
-                ''', (datetime.now().isoformat(),))
+                """,
+                    (datetime.now().isoformat(),),
+                )
                 count = cursor.rowcount
                 conn.commit()
                 if count > 0:
@@ -257,7 +288,8 @@ class VideoDatabase:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
+                cursor.execute(
+                    """
                     SELECT
                         game_name,
                         COUNT(*) as total,
@@ -265,9 +297,9 @@ class VideoDatabase:
                     FROM processed_videos
                     GROUP BY game_name
                     ORDER BY total DESC
-                ''')
-                return [(row['game_name'], row['total'], row['completed'])
-                        for row in cursor.fetchall()]
+                """
+                )
+                return [(row["game_name"], row["total"], row["completed"]) for row in cursor.fetchall()]
         except sqlite3.Error as e:
             print(f"Database error getting games summary: {e}")
             return []
@@ -277,7 +309,7 @@ class VideoDatabase:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('DELETE FROM processed_videos WHERE video_id = ?', (video_id,))
+                cursor.execute("DELETE FROM processed_videos WHERE video_id = ?", (video_id,))
                 conn.commit()
                 return cursor.rowcount > 0
         except sqlite3.Error as e:
@@ -289,6 +321,7 @@ class VideoDatabase:
     def _generate_cache_key(self, video_id: str, game_name: str) -> str:
         """Generate cache key for boss identification"""
         import hashlib
+
         key = f"{video_id}:{game_name}"
         return hashlib.sha256(key.encode()).hexdigest()
 
@@ -300,22 +333,28 @@ class VideoDatabase:
                 cache_key = self._generate_cache_key(video_id, game_name)
 
                 # Get cache entry
-                cursor.execute('''
+                cursor.execute(
+                    """
                     SELECT * FROM boss_cache
                     WHERE cache_key = ? AND (expires_at IS NULL OR expires_at > ?)
-                ''', (cache_key, datetime.now().isoformat()))
+                """,
+                    (cache_key, datetime.now().isoformat()),
+                )
 
                 row = cursor.fetchone()
                 if not row:
                     return None
 
                 # Update access count and timestamp
-                cursor.execute('''
+                cursor.execute(
+                    """
                     UPDATE boss_cache
                     SET accessed_count = accessed_count + 1,
                         last_accessed = ?
                     WHERE cache_key = ?
-                ''', (datetime.now().isoformat(), cache_key))
+                """,
+                    (datetime.now().isoformat(), cache_key),
+                )
                 conn.commit()
 
                 return dict(row)
@@ -323,8 +362,9 @@ class VideoDatabase:
             print(f"Database error getting cached boss for {video_id}: {e}")
             return None
 
-    def cache_boss(self, video_id: str, game_name: str, boss_name: str,
-                   source: str = 'frames', expiry_days: int = 30) -> bool:
+    def cache_boss(
+        self, video_id: str, game_name: str, boss_name: str, source: str = "frames", expiry_days: int = 30
+    ) -> bool:
         """Cache boss identification result"""
         try:
             with self.get_connection() as conn:
@@ -333,14 +373,17 @@ class VideoDatabase:
 
                 # Calculate expiry date
                 from datetime import timedelta
+
                 expires_at = (datetime.now() + timedelta(days=expiry_days)).isoformat()
 
-                cursor.execute('''
+                cursor.execute(
+                    """
                     INSERT OR REPLACE INTO boss_cache
                     (cache_key, video_id, game_name, boss_name, source, expires_at, last_accessed, accessed_count)
                     VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-                ''', (cache_key, video_id, game_name, boss_name, source, expires_at,
-                      datetime.now().isoformat()))
+                """,
+                    (cache_key, video_id, game_name, boss_name, source, expires_at, datetime.now().isoformat()),
+                )
                 conn.commit()
                 return True
         except sqlite3.Error as e:
@@ -357,18 +400,21 @@ class VideoDatabase:
                 cursor = conn.cursor()
 
                 # Count expired entries
-                cursor.execute('''
+                cursor.execute(
+                    """
                     SELECT COUNT(*) as count FROM boss_cache
                     WHERE expires_at IS NOT NULL AND expires_at <= ?
-                ''', (datetime.now().isoformat(),))
-                expired_count = cursor.fetchone()['count']
+                """,
+                    (datetime.now().isoformat(),),
+                )
+                expired_count = cursor.fetchone()["count"]
 
                 # Count total entries
-                cursor.execute('SELECT COUNT(*) as count FROM boss_cache')
-                total_count = cursor.fetchone()['count']
+                cursor.execute("SELECT COUNT(*) as count FROM boss_cache")
+                total_count = cursor.fetchone()["count"]
 
                 # Clear all cache
-                cursor.execute('DELETE FROM boss_cache')
+                cursor.execute("DELETE FROM boss_cache")
                 conn.commit()
 
                 return (total_count, expired_count)
@@ -381,10 +427,13 @@ class VideoDatabase:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
+                cursor.execute(
+                    """
                     DELETE FROM boss_cache
                     WHERE expires_at IS NOT NULL AND expires_at <= ?
-                ''', (datetime.now().isoformat(),))
+                """,
+                    (datetime.now().isoformat(),),
+                )
                 count = cursor.rowcount
                 conn.commit()
                 return count
@@ -399,31 +448,31 @@ class VideoDatabase:
                 cursor = conn.cursor()
 
                 # Total entries
-                cursor.execute('SELECT COUNT(*) as count FROM boss_cache')
-                total = cursor.fetchone()['count']
+                cursor.execute("SELECT COUNT(*) as count FROM boss_cache")
+                total = cursor.fetchone()["count"]
 
                 # Expired entries
-                cursor.execute('''
+                cursor.execute(
+                    """
                     SELECT COUNT(*) as count FROM boss_cache
                     WHERE expires_at IS NOT NULL AND expires_at <= ?
-                ''', (datetime.now().isoformat(),))
-                expired = cursor.fetchone()['count']
+                """,
+                    (datetime.now().isoformat(),),
+                )
+                expired = cursor.fetchone()["count"]
 
                 # Active entries
                 active = total - expired
 
                 # Most accessed
-                cursor.execute('''
+                cursor.execute(
+                    """
                     SELECT MAX(accessed_count) as max_accessed FROM boss_cache
-                ''')
-                max_accessed = cursor.fetchone()['max_accessed'] or 0
+                """
+                )
+                max_accessed = cursor.fetchone()["max_accessed"] or 0
 
-                return {
-                    'total': total,
-                    'active': active,
-                    'expired': expired,
-                    'max_accessed': max_accessed
-                }
+                return {"total": total, "active": active, "expired": expired, "max_accessed": max_accessed}
         except sqlite3.Error as e:
             print(f"Database error getting cache statistics: {e}")
             return {}
@@ -441,5 +490,5 @@ def exponential_backoff(attempt: int, base_delay: float = 2.0, max_delay: float 
     Returns:
         Delay in seconds
     """
-    delay = base_delay * (2 ** attempt)
+    delay = base_delay * (2**attempt)
     return min(delay, max_delay)

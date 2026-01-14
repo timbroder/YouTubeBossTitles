@@ -4,39 +4,35 @@ YouTube Boss Title Updater
 Automatically updates PS5 game videos with boss names
 """
 
+import argparse
+import base64
+import logging
 import os
 import re
-import json
-import base64
-import tempfile
 import subprocess
-import argparse
-from typing import List, Dict, Optional, Tuple, Any, Union
-from datetime import datetime
-from pathlib import Path
+import tempfile
 import time
 from collections import defaultdict
+from datetime import datetime
+from typing import Dict, List, Optional
 
+import gspread
+import openai
+import yt_dlp
+from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-import openai
-import requests
-from PIL import Image
-import yt_dlp
-import gspread
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn, TimeRemainingColumn
+from rich.table import Table
 
 from config import Config
 from database import VideoDatabase, exponential_backoff
-from logging_config import setup_logging, log_api_call, log_cost, log_error
-from error_messages import format_error, ErrorCode
-from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
-from rich.table import Table
-from rich.panel import Panel
-from rich import box
-import logging
+from error_messages import ErrorCode, format_error
+from logging_config import log_api_call, log_error, setup_logging
 
 __version__ = "1.1.0"
 
@@ -48,32 +44,31 @@ logger = None
 
 
 # API scopes
-SCOPES = [
-    'https://www.googleapis.com/auth/youtube.force-ssl',
-    'https://www.googleapis.com/auth/spreadsheets'
-]
+SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl", "https://www.googleapis.com/auth/spreadsheets"]
 
 # Souls-like games that should get "Melee" in the title
 SOULSLIKE_GAMES = [
-    'bloodborne',
-    'dark souls',
-    'demon\'s souls',
-    'demons souls',
-    'elden ring',
-    'sekiro',
-    'lords of the fallen',
-    'lies of p',
-    'nioh',
-    'mortal shell',
-    'salt and sanctuary',
-    'hollow knight',
-    'the surge',
-    'remnant',
+    "bloodborne",
+    "dark souls",
+    "demon's souls",
+    "demons souls",
+    "elden ring",
+    "sekiro",
+    "lords of the fallen",
+    "lies of p",
+    "nioh",
+    "mortal shell",
+    "salt and sanctuary",
+    "hollow knight",
+    "the surge",
+    "remnant",
 ]
 
 
 class YouTubeBossUpdater:
-    def __init__(self, config: Config, logger_instance: Optional[logging.Logger] = None, db_path: str = 'processed_videos.db') -> None:
+    def __init__(
+        self, config: Config, logger_instance: Optional[logging.Logger] = None, db_path: str = "processed_videos.db"
+    ) -> None:
         """
         Initialize the updater with configuration.
 
@@ -92,12 +87,12 @@ class YouTubeBossUpdater:
         self.sheets_client = None
         self.log_sheet = None
         self.error_sheet = None  # Separate sheet for errors
-        self.log_spreadsheet_name = config.get('youtube.log_spreadsheet_name')
-        self.openai_client = openai.OpenAI(api_key=config.get('openai.api_key'))
+        self.log_spreadsheet_name = config.get("youtube.log_spreadsheet_name")
+        self.openai_client = openai.OpenAI(api_key=config.get("openai.api_key"))
         self.processed_videos = set()  # Track processed video IDs from sheets
         self.db = VideoDatabase(db_path)
-        self.max_retries = config.get('processing.retry.max_attempts', 3)
-        self.logger = logger_instance or logging.getLogger('youtube_boss_updater')
+        self.max_retries = config.get("processing.retry.max_attempts", 3)
+        self.logger = logger_instance or logging.getLogger("youtube_boss_updater")
 
     def authenticate_youtube(self) -> None:
         """
@@ -118,26 +113,26 @@ class YouTubeBossUpdater:
         creds = None
 
         # Token file stores user's access and refresh tokens
-        if os.path.exists('token.json'):
-            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+        if os.path.exists("token.json"):
+            creds = Credentials.from_authorized_user_file("token.json", SCOPES)
 
         # If no valid credentials, let user log in
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
-                if not os.path.exists('client_secret.json'):
+                if not os.path.exists("client_secret.json"):
                     raise FileNotFoundError(
                         "client_secret.json not found. Please download it from Google Cloud Console."
                     )
-                flow = InstalledAppFlow.from_client_secrets_file('client_secret.json', SCOPES)
+                flow = InstalledAppFlow.from_client_secrets_file("client_secret.json", SCOPES)
                 creds = flow.run_local_server(port=0)
 
             # Save credentials for next run
-            with open('token.json', 'w') as token:
+            with open("token.json", "w") as token:
                 token.write(creds.to_json())
 
-        self.youtube = build('youtube', 'v3', credentials=creds)
+        self.youtube = build("youtube", "v3", credentials=creds)
         print("✓ YouTube authentication successful")
         self.logger.info("YouTube API authentication successful")
 
@@ -179,18 +174,11 @@ class YouTubeBossUpdater:
             self.log_sheet.update_title("Processed Videos")
 
             # Set up headers for main sheet
-            headers = [
-                'Timestamp',
-                'Original Title',
-                'New Title',
-                'Playlist Name',
-                'Video Link',
-                'Playlist Link'
-            ]
+            headers = ["Timestamp", "Original Title", "New Title", "Playlist Name", "Video Link", "Playlist Link"]
             self.log_sheet.append_row(headers)
 
             # Format header row (bold)
-            self.log_sheet.format('A1:F1', {'textFormat': {'bold': True}})
+            self.log_sheet.format("A1:F1", {"textFormat": {"bold": True}})
 
             # Create and setup errors sheet
             self.error_sheet = spreadsheet.add_worksheet(title="Errors", rows="1000", cols="10")
@@ -205,17 +193,17 @@ class YouTubeBossUpdater:
             return
 
         error_headers = [
-            'Timestamp',
-            'Video ID',
-            'Video Title',
-            'Game Name',
-            'Error Type',
-            'Error Message',
-            'Attempts',
-            'Video Link'
+            "Timestamp",
+            "Video ID",
+            "Video Title",
+            "Game Name",
+            "Error Type",
+            "Error Message",
+            "Attempts",
+            "Video Link",
         ]
         self.error_sheet.append_row(error_headers)
-        self.error_sheet.format('A1:H1', {'textFormat': {'bold': True}})
+        self.error_sheet.format("A1:H1", {"textFormat": {"bold": True}})
 
     def _load_processed_videos(self) -> None:
         """Load video IDs that have already been processed from Google Sheets."""
@@ -226,17 +214,18 @@ class YouTubeBossUpdater:
             # Get all video links from the sheet (column E)
             records = self.log_sheet.get_all_records()
             for record in records:
-                video_link = record.get('Video Link', '')
-                if video_link and 'watch?v=' in video_link:
-                    video_id = video_link.split('watch?v=')[1].split('&')[0]
+                video_link = record.get("Video Link", "")
+                if video_link and "watch?v=" in video_link:
+                    video_id = video_link.split("watch?v=")[1].split("&")[0]
                     self.processed_videos.add(video_id)
 
             print(f"  Loaded {len(self.processed_videos)} already processed videos from sheets")
         except Exception as e:
             print(f"  ⚠ Warning: Could not load processed videos: {e}")
 
-    def log_video_update(self, video_id: str, original_title: str, new_title: str,
-                        playlist_name: str, playlist_id: Optional[str]) -> None:
+    def log_video_update(
+        self, video_id: str, original_title: str, new_title: str, playlist_name: str, playlist_id: Optional[str]
+    ) -> None:
         """
         Log video update to Google Sheets.
 
@@ -259,27 +248,21 @@ class YouTubeBossUpdater:
             return
 
         try:
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             video_link = f"https://www.youtube.com/watch?v={video_id}"
             playlist_link = f"https://www.youtube.com/playlist?list={playlist_id}" if playlist_id else "N/A"
 
-            row = [
-                timestamp,
-                original_title,
-                new_title,
-                playlist_name,
-                video_link,
-                playlist_link
-            ]
+            row = [timestamp, original_title, new_title, playlist_name, video_link, playlist_link]
 
             self.log_sheet.append_row(row)
-            print(f"  ✓ Logged update to spreadsheet")
+            print("  ✓ Logged update to spreadsheet")
 
         except Exception as e:
             print(f"  ⚠ Warning: Failed to log to spreadsheet: {e}")
 
-    def log_error_to_sheet(self, video_id: str, video_title: str, game_name: str,
-                          error_type: str, error_message: str, attempts: int = 1) -> None:
+    def log_error_to_sheet(
+        self, video_id: str, video_title: str, game_name: str, error_type: str, error_message: str, attempts: int = 1
+    ) -> None:
         """
         Log error to Google Sheets Errors tab.
 
@@ -296,7 +279,7 @@ class YouTubeBossUpdater:
             return
 
         try:
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             video_link = f"https://www.youtube.com/watch?v={video_id}"
 
             # Truncate error message if too long
@@ -304,16 +287,7 @@ class YouTubeBossUpdater:
             if len(error_message) > max_error_length:
                 error_message = error_message[:max_error_length] + "..."
 
-            row = [
-                timestamp,
-                video_id,
-                video_title,
-                game_name,
-                error_type,
-                error_message,
-                attempts,
-                video_link
-            ]
+            row = [timestamp, video_id, video_title, game_name, error_type, error_message, attempts, video_link]
 
             self.error_sheet.append_row(row)
             self.logger.debug(f"Logged error to spreadsheet for video {video_id}")
@@ -338,7 +312,7 @@ class YouTubeBossUpdater:
             False
         """
         # Pattern: GameName_YYYYMMDDHHMMSS or GameName_YYYYMMDDHHMMSS
-        pattern = r'.+_\d{14}$'
+        pattern = r".+_\d{14}$"
         return bool(re.match(pattern, title))
 
     def extract_game_name(self, title: str) -> str:
@@ -356,7 +330,7 @@ class YouTubeBossUpdater:
             'Bloodborne'
         """
         # Remove timestamp pattern
-        game_name = re.sub(r'_\d{14}$', '', title)
+        game_name = re.sub(r"_\d{14}$", "", title)
         return game_name.strip()
 
     def is_soulslike(self, game_name: str) -> bool:
@@ -376,7 +350,7 @@ class YouTubeBossUpdater:
             False
         """
         game_lower = game_name.lower()
-        soulslike_games = self.config.get('soulslike_games', SOULSLIKE_GAMES)
+        soulslike_games = self.config.get("soulslike_games", SOULSLIKE_GAMES)
         return any(souls_game in game_lower for souls_game in soulslike_games)
 
     def get_my_videos(self) -> List[Dict[str, str]]:
@@ -396,39 +370,31 @@ class YouTubeBossUpdater:
         videos = []
 
         # Get the uploads playlist ID
-        channels_response = self.youtube.channels().list(
-            part='contentDetails',
-            mine=True
-        ).execute()
+        channels_response = self.youtube.channels().list(part="contentDetails", mine=True).execute()
 
-        if not channels_response.get('items'):
+        if not channels_response.get("items"):
             print("No channel found")
             return videos
 
-        uploads_playlist_id = channels_response['items'][0]['contentDetails']['relatedPlaylists']['uploads']
+        uploads_playlist_id = channels_response["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
 
         # Get all videos from uploads playlist
         next_page_token = None
 
         while True:
-            playlist_response = self.youtube.playlistItems().list(
-                part='snippet',
-                playlistId=uploads_playlist_id,
-                maxResults=50,
-                pageToken=next_page_token
-            ).execute()
+            playlist_response = (
+                self.youtube.playlistItems()
+                .list(part="snippet", playlistId=uploads_playlist_id, maxResults=50, pageToken=next_page_token)
+                .execute()
+            )
 
-            for item in playlist_response.get('items', []):
-                video_id = item['snippet']['resourceId']['videoId']
-                title = item['snippet']['title']
+            for item in playlist_response.get("items", []):
+                video_id = item["snippet"]["resourceId"]["videoId"]
+                title = item["snippet"]["title"]
 
-                videos.append({
-                    'id': video_id,
-                    'title': title,
-                    'published_at': item['snippet']['publishedAt']
-                })
+                videos.append({"id": video_id, "title": title, "published_at": item["snippet"]["publishedAt"]})
 
-            next_page_token = playlist_response.get('nextPageToken')
+            next_page_token = playlist_response.get("nextPageToken")
             if not next_page_token:
                 break
 
@@ -473,7 +439,7 @@ class YouTubeBossUpdater:
         """
         if timestamps is None:
             # Get timestamps from config
-            timestamps = self.config.get('processing.frame_extraction.timestamps', [10, 20, 30, 45, 60])
+            timestamps = self.config.get("processing.frame_extraction.timestamps", [10, 20, 30, 45, 60])
 
         print(f"  Extracting frames from video at timestamps: {timestamps}")
 
@@ -482,48 +448,57 @@ class YouTubeBossUpdater:
 
         try:
             video_url = f"https://www.youtube.com/watch?v={video_id}"
-            video_path = os.path.join(temp_dir, 'video.mp4')
+            video_path = os.path.join(temp_dir, "video.mp4")
 
             # Download first 90 seconds of video
-            quality = self.config.get('processing.frame_extraction.quality', 'worst')
+            quality = self.config.get("processing.frame_extraction.quality", "worst")
             ydl_opts = {
-                'format': f'{quality}[ext=mp4]',  # Use configured quality
-                'outtmpl': video_path,
-                'quiet': True,
-                'no_warnings': True,
-                'download_ranges': lambda info, ydl: [{'start_time': 0, 'end_time': 90}],
+                "format": f"{quality}[ext=mp4]",  # Use configured quality
+                "outtmpl": video_path,
+                "quiet": True,
+                "no_warnings": True,
+                "download_ranges": lambda info, ydl: [{"start_time": 0, "end_time": 90}],
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([video_url])
 
             if not os.path.exists(video_path):
-                print(f"  ✗ Failed to download video")
+                print("  ✗ Failed to download video")
                 return frames
 
             # Extract frames at specified timestamps using ffmpeg
             for i, timestamp in enumerate(timestamps):
-                frame_path = os.path.join(temp_dir, f'frame_{i}.jpg')
+                frame_path = os.path.join(temp_dir, f"frame_{i}.jpg")
 
                 try:
                     # Use ffmpeg to extract frame at timestamp
-                    subprocess.run([
-                        'ffmpeg',
-                        '-ss', str(timestamp),
-                        '-i', video_path,
-                        '-frames:v', '1',
-                        '-q:v', '2',
-                        '-y',
-                        frame_path
-                    ], check=True, capture_output=True, timeout=10)
+                    subprocess.run(
+                        [
+                            "ffmpeg",
+                            "-ss",
+                            str(timestamp),
+                            "-i",
+                            video_path,
+                            "-frames:v",
+                            "1",
+                            "-q:v",
+                            "2",
+                            "-y",
+                            frame_path,
+                        ],
+                        check=True,
+                        capture_output=True,
+                        timeout=10,
+                    )
 
                     if os.path.exists(frame_path):
                         # Convert to base64 for OpenAI API
-                        with open(frame_path, 'rb') as f:
-                            image_data = base64.b64encode(f.read()).decode('utf-8')
+                        with open(frame_path, "rb") as f:
+                            image_data = base64.b64encode(f.read()).decode("utf-8")
                             frames.append(f"data:image/jpeg;base64,{image_data}")
 
-                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
                     print(f"  ⚠ Failed to extract frame at {timestamp}s")
                     continue
 
@@ -536,6 +511,7 @@ class YouTubeBossUpdater:
             # Cleanup temp files
             try:
                 import shutil
+
                 shutil.rmtree(temp_dir)
             except Exception:
                 pass
@@ -596,25 +572,20 @@ Please identify the boss being fought in these images. Look for:
 If you can identify a specific boss name, respond with ONLY the boss name.
 If you cannot identify a specific boss, respond with "Unknown Boss".{boss_context}
 
-Boss name:"""
+Boss name:""",
             }
         ]
 
         # Add all image URLs
         for url in image_urls:
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": url}
-            })
+            content.append({"type": "image_url", "image_url": {"url": url}})
 
         try:
-            model = self.config.get('openai.model', 'gpt-4o')
-            max_tokens = self.config.get('openai.max_tokens', 100)
+            model = self.config.get("openai.model", "gpt-4o")
+            max_tokens = self.config.get("openai.max_tokens", 100)
 
             response = self.openai_client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": content}],
-                max_tokens=max_tokens
+                model=model, messages=[{"role": "user", "content": content}], max_tokens=max_tokens
             )
 
             boss_name = response.choices[0].message.content.strip()
@@ -635,63 +606,84 @@ Boss name:"""
         Includes retry logic with exponential backoff
         """
         print(f"  Analyzing video {video_id} for boss identification...")
-        self.logger.info(f"Starting boss identification for video {video_id}", extra={'video_id': video_id, 'game_name': game_name})
+        self.logger.info(
+            f"Starting boss identification for video {video_id}", extra={"video_id": video_id, "game_name": game_name}
+        )
 
         # Check cache first if enabled
-        cache_enabled = self.config.get('processing.cache.enabled', True)
+        cache_enabled = self.config.get("processing.cache.enabled", True)
         if cache_enabled:
             cached_result = self.db.get_cached_boss(video_id, game_name)
             if cached_result:
-                boss_name = cached_result['boss_name']
+                boss_name = cached_result["boss_name"]
                 print(f"  ✓ Found in cache: {boss_name} (source: {cached_result['source']})")
-                self.logger.info(f"Boss found in cache: {boss_name}", extra={'video_id': video_id, 'game_name': game_name, 'cache_hit': True})
+                self.logger.info(
+                    f"Boss found in cache: {boss_name}",
+                    extra={"video_id": video_id, "game_name": game_name, "cache_hit": True},
+                )
                 return boss_name
 
         try:
             # Step 1: Try with thumbnail first (fast and free)
-            print(f"  Trying thumbnail first...")
-            log_api_call(self.logger, 'youtube_thumbnail', video_id)
+            print("  Trying thumbnail first...")
+            log_api_call(self.logger, "youtube_thumbnail", video_id)
             thumbnail_url = self.get_video_thumbnail_url(video_id)
             boss_name = self.identify_boss_from_images([thumbnail_url], game_name)
 
             if boss_name:
                 print(f"  ✓ Identified boss from thumbnail: {boss_name}")
-                self.logger.info(f"Boss identified from thumbnail: {boss_name}", extra={'video_id': video_id, 'game_name': game_name})
+                self.logger.info(
+                    f"Boss identified from thumbnail: {boss_name}", extra={"video_id": video_id, "game_name": game_name}
+                )
 
                 # Cache the result
                 if cache_enabled:
-                    expiry_days = self.config.get('processing.cache.expiry_days', 30)
-                    self.db.cache_boss(video_id, game_name, boss_name, source='thumbnail', expiry_days=expiry_days)
+                    expiry_days = self.config.get("processing.cache.expiry_days", 30)
+                    self.db.cache_boss(video_id, game_name, boss_name, source="thumbnail", expiry_days=expiry_days)
 
                 return boss_name
 
             # Step 2: Thumbnail didn't work, extract actual video frames
-            print(f"  Thumbnail didn't work, extracting frames from video...")
-            self.logger.debug("Thumbnail identification failed, extracting video frames", extra={'video_id': video_id})
+            print("  Thumbnail didn't work, extracting frames from video...")
+            self.logger.debug("Thumbnail identification failed, extracting video frames", extra={"video_id": video_id})
             frames = self.extract_video_frames(video_id)
 
             if not frames:
-                print(f"  ✗ Could not extract frames from video")
-                log_error(self.logger, 'frame_extraction_failed', 'Could not extract frames from video', video_id=video_id, game_name=game_name)
+                print("  ✗ Could not extract frames from video")
+                log_error(
+                    self.logger,
+                    "frame_extraction_failed",
+                    "Could not extract frames from video",
+                    video_id=video_id,
+                    game_name=game_name,
+                )
                 return None
 
             # Try to identify boss from extracted frames
-            log_api_call(self.logger, 'openai_vision_frames', video_id, frame_count=len(frames))
+            log_api_call(self.logger, "openai_vision_frames", video_id, frame_count=len(frames))
             boss_name = self.identify_boss_from_images(frames, game_name)
 
             if boss_name:
                 print(f"  ✓ Identified boss from video frames: {boss_name}")
-                self.logger.info(f"Boss identified from frames: {boss_name}", extra={'video_id': video_id, 'game_name': game_name})
+                self.logger.info(
+                    f"Boss identified from frames: {boss_name}", extra={"video_id": video_id, "game_name": game_name}
+                )
 
                 # Cache the result
                 if cache_enabled:
-                    expiry_days = self.config.get('processing.cache.expiry_days', 30)
-                    self.db.cache_boss(video_id, game_name, boss_name, source='frames', expiry_days=expiry_days)
+                    expiry_days = self.config.get("processing.cache.expiry_days", 30)
+                    self.db.cache_boss(video_id, game_name, boss_name, source="frames", expiry_days=expiry_days)
 
                 return boss_name
             else:
-                print(f"  ✗ Could not identify boss even from video frames")
-                log_error(self.logger, 'boss_identification_failed', 'Could not identify boss from video frames', video_id=video_id, game_name=game_name)
+                print("  ✗ Could not identify boss even from video frames")
+                log_error(
+                    self.logger,
+                    "boss_identification_failed",
+                    "Could not identify boss from video frames",
+                    video_id=video_id,
+                    game_name=game_name,
+                )
                 return None
 
         except Exception as e:
@@ -700,12 +692,21 @@ Boss name:"""
                 delay = exponential_backoff(attempt)
                 print(f"  ⚠ Error: {e}")
                 print(f"  Retrying in {delay:.1f} seconds (attempt {attempt + 1}/{self.max_retries})...")
-                self.logger.warning(f"Retry {attempt + 1}/{self.max_retries} after error: {e}", extra={'video_id': video_id})
+                self.logger.warning(
+                    f"Retry {attempt + 1}/{self.max_retries} after error: {e}", extra={"video_id": video_id}
+                )
                 time.sleep(delay)
                 return self.identify_boss(video_id, game_name, attempt + 1)
             else:
                 print(f"  ✗ Failed after {self.max_retries} attempts: {e}")
-                log_error(self.logger, 'max_retries_exceeded', f'Failed after {self.max_retries} attempts: {e}', video_id=video_id, game_name=game_name, exc_info=True)
+                log_error(
+                    self.logger,
+                    "max_retries_exceeded",
+                    f"Failed after {self.max_retries} attempts: {e}",
+                    video_id=video_id,
+                    game_name=game_name,
+                    exc_info=True,
+                )
                 raise
 
     def format_title(self, game_name: str, boss_name: str) -> str:
@@ -753,29 +754,20 @@ Boss name:"""
         """
         try:
             # Get current video details
-            video_response = self.youtube.videos().list(
-                part='snippet',
-                id=video_id
-            ).execute()
+            video_response = self.youtube.videos().list(part="snippet", id=video_id).execute()
 
-            if not video_response.get('items'):
+            if not video_response.get("items"):
                 print(f"  ✗ Video {video_id} not found")
                 return False
 
-            video = video_response['items'][0]
-            snippet = video['snippet']
+            video = video_response["items"][0]
+            snippet = video["snippet"]
 
             # Update title
-            snippet['title'] = new_title
+            snippet["title"] = new_title
 
             # Update video
-            self.youtube.videos().update(
-                part='snippet',
-                body={
-                    'id': video_id,
-                    'snippet': snippet
-                }
-            ).execute()
+            self.youtube.videos().update(part="snippet", body={"id": video_id, "snippet": snippet}).execute()
 
             print(f"  ✓ Title updated to: {new_title}")
             return True
@@ -800,33 +792,28 @@ Boss name:"""
             'PLabc123xyz'
         """
         # Search for existing playlist
-        playlists_response = self.youtube.playlists().list(
-            part='snippet',
-            mine=True,
-            maxResults=50
-        ).execute()
+        playlists_response = self.youtube.playlists().list(part="snippet", mine=True, maxResults=50).execute()
 
-        for playlist in playlists_response.get('items', []):
-            if playlist['snippet']['title'].lower() == game_name.lower():
+        for playlist in playlists_response.get("items", []):
+            if playlist["snippet"]["title"].lower() == game_name.lower():
                 print(f"  ✓ Found existing playlist: {game_name}")
-                return playlist['id']
+                return playlist["id"]
 
         # Create new playlist
         try:
-            playlist_response = self.youtube.playlists().insert(
-                part='snippet,status',
-                body={
-                    'snippet': {
-                        'title': game_name,
-                        'description': f'PS5 gameplay videos for {game_name}'
+            playlist_response = (
+                self.youtube.playlists()
+                .insert(
+                    part="snippet,status",
+                    body={
+                        "snippet": {"title": game_name, "description": f"PS5 gameplay videos for {game_name}"},
+                        "status": {"privacyStatus": "public"},
                     },
-                    'status': {
-                        'privacyStatus': 'public'
-                    }
-                }
-            ).execute()
+                )
+                .execute()
+            )
 
-            playlist_id = playlist_response['id']
+            playlist_id = playlist_response["id"]
             print(f"  ✓ Created new playlist: {game_name}")
             return playlist_id
 
@@ -852,25 +839,19 @@ Boss name:"""
         """
         try:
             self.youtube.playlistItems().insert(
-                part='snippet',
+                part="snippet",
                 body={
-                    'snippet': {
-                        'playlistId': playlist_id,
-                        'resourceId': {
-                            'kind': 'youtube#video',
-                            'videoId': video_id
-                        }
-                    }
-                }
+                    "snippet": {"playlistId": playlist_id, "resourceId": {"kind": "youtube#video", "videoId": video_id}}
+                },
             ).execute()
 
-            print(f"  ✓ Added to playlist")
+            print("  ✓ Added to playlist")
             return True
 
         except Exception as e:
             # Check if video is already in playlist
-            if 'videoAlreadyInPlaylist' in str(e):
-                print(f"  ℹ Video already in playlist")
+            if "videoAlreadyInPlaylist" in str(e):
+                print("  ℹ Video already in playlist")
                 return True
             print(f"  ✗ Error adding to playlist: {e}")
             return False
@@ -892,8 +873,8 @@ Boss name:"""
             >>> success
             True
         """
-        video_id = video['id']
-        title = video['title']
+        video_id = video["id"]
+        title = video["title"]
 
         print(f"\nProcessing: {title} ({video_id})")
 
@@ -906,7 +887,7 @@ Boss name:"""
                 print("  ⊘ Already processed (in sheets), skipping (use --force to reprocess)")
                 return False
 
-            if db_record and db_record['status'] == 'completed':
+            if db_record and db_record["status"] == "completed":
                 print("  ⊘ Already processed (in database), skipping (use --force to reprocess)")
                 return False
 
@@ -921,28 +902,25 @@ Boss name:"""
 
         # Add to database if not already there
         if not db_record:
-            self.db.add_video(video_id, title, game_name, status='pending')
+            self.db.add_video(video_id, title, game_name, status="pending")
 
         # Mark as processing
-        self.db.update_video_status(video_id, 'processing')
+        self.db.update_video_status(video_id, "processing")
 
         try:
             # Identify boss
             boss_name = self.identify_boss(video_id, game_name)
             if not boss_name:
                 print("  ⊘ Could not identify boss")
-                error_msg = 'Could not identify boss from video'
-                self.db.update_video_status(
-                    video_id, 'failed',
-                    error_message=error_msg
-                )
+                error_msg = "Could not identify boss from video"
+                self.db.update_video_status(video_id, "failed", error_message=error_msg)
                 self.log_error_to_sheet(
                     video_id=video_id,
                     video_title=title,
                     game_name=game_name,
-                    error_type='boss_identification_failed',
+                    error_type="boss_identification_failed",
                     error_message=error_msg,
-                    attempts=1
+                    attempts=1,
                 )
                 return False
 
@@ -954,18 +932,15 @@ Boss name:"""
 
             # Update title
             if not self.update_video_title(video_id, new_title):
-                error_msg = 'Failed to update video title'
-                self.db.update_video_status(
-                    video_id, 'failed',
-                    error_message=error_msg
-                )
+                error_msg = "Failed to update video title"
+                self.db.update_video_status(video_id, "failed", error_message=error_msg)
                 self.log_error_to_sheet(
                     video_id=video_id,
                     video_title=title,
                     game_name=game_name,
-                    error_type='title_update_failed',
+                    error_type="title_update_failed",
                     error_message=error_msg,
-                    attempts=1
+                    attempts=1,
                 )
                 return False
 
@@ -980,15 +955,11 @@ Boss name:"""
                 original_title=original_title,
                 new_title=new_title,
                 playlist_name=game_name,
-                playlist_id=playlist_id
+                playlist_id=playlist_id,
             )
 
             # Mark as completed in database
-            self.db.update_video_status(
-                video_id, 'completed',
-                new_title=new_title,
-                boss_name=boss_name
-            )
+            self.db.update_video_status(video_id, "completed", new_title=new_title, boss_name=boss_name)
 
             # Add to processed set
             self.processed_videos.add(video_id)
@@ -999,30 +970,27 @@ Boss name:"""
             print(f"  ✗ Error processing video: {e}")
             log_error(
                 self.logger,
-                error_type='processing_error',
+                error_type="processing_error",
                 message=f"Error processing video: {e}",
                 video_id=video_id,
                 game_name=game_name,
-                exc_info=True
+                exc_info=True,
             )
 
             # Get attempts from database
             db_record = self.db.get_video(video_id)
-            attempts = db_record['attempts'] if db_record else 1
+            attempts = db_record["attempts"] if db_record else 1
 
-            self.db.update_video_status(
-                video_id, 'failed',
-                error_message=str(e)
-            )
+            self.db.update_video_status(video_id, "failed", error_message=str(e))
 
             # Log error to Google Sheets
             self.log_error_to_sheet(
                 video_id=video_id,
                 video_title=title,
                 game_name=game_name,
-                error_type='processing_error',
+                error_type="processing_error",
                 error_message=str(e),
-                attempts=attempts
+                attempts=attempts,
             )
             return False
 
@@ -1049,9 +1017,9 @@ Boss name:"""
         ps5_videos = 0
 
         for video in videos:
-            if self.is_default_ps5_title(video['title']):
+            if self.is_default_ps5_title(video["title"]):
                 ps5_videos += 1
-                game_name = self.extract_game_name(video['title'])
+                game_name = self.extract_game_name(video["title"])
                 game_counts[game_name] += 1
 
         print(f"\nFound {ps5_videos} videos with default PS5 titles")
@@ -1063,9 +1031,16 @@ Boss name:"""
             souls_tag = " [SOULS-LIKE]" if self.is_soulslike(game_name) else ""
             print(f"  {game_name}: {count} video(s){souls_tag}")
 
-    def run(self, dry_run: bool = False, video_id: Optional[str] = None,
-            game: Optional[str] = None, limit: Optional[int] = None, force: bool = False,
-            resume: bool = False, workers: Optional[int] = None) -> None:
+    def run(
+        self,
+        dry_run: bool = False,
+        video_id: Optional[str] = None,
+        game: Optional[str] = None,
+        limit: Optional[int] = None,
+        force: bool = False,
+        resume: bool = False,
+        workers: Optional[int] = None,
+    ) -> None:
         """
         Main execution function.
 
@@ -1084,11 +1059,13 @@ Boss name:"""
         """
         # Print header
         console.print()
-        console.print(Panel(
-            f"[bold cyan]YouTube Boss Title Updater[/bold cyan]\n[dim]Version {__version__}[/dim]",
-            border_style="cyan",
-            box=box.DOUBLE
-        ))
+        console.print(
+            Panel(
+                f"[bold cyan]YouTube Boss Title Updater[/bold cyan]\n[dim]Version {__version__}[/dim]",
+                border_style="cyan",
+                box=box.DOUBLE,
+            )
+        )
 
         # Clear any stuck 'processing' status from previous runs
         if not dry_run:
@@ -1099,26 +1076,29 @@ Boss name:"""
             stats = self.db.get_statistics()
             cache_stats = self.db.get_cache_statistics()
 
-            if stats.get('total', 0) > 0 or cache_stats.get('total', 0) > 0:
+            if stats.get("total", 0) > 0 or cache_stats.get("total", 0) > 0:
                 console.print("\n[bold]Database Status:[/bold]")
                 table = Table(show_header=False, box=None, padding=(0, 2))
                 table.add_column("Label", style="cyan")
                 table.add_column("Value", justify="right")
 
-                if stats.get('total', 0) > 0:
-                    table.add_row("Total tracked", str(stats.get('total', 0)))
+                if stats.get("total", 0) > 0:
+                    table.add_row("Total tracked", str(stats.get("total", 0)))
                     table.add_row("Completed", f"[green]{stats.get('completed', 0)}[/green]")
                     table.add_row("Failed", f"[red]{stats.get('failed', 0)}[/red]")
                     table.add_row("Pending", f"[yellow]{stats.get('pending', 0)}[/yellow]")
 
-                if cache_stats.get('total', 0) > 0:
+                if cache_stats.get("total", 0) > 0:
                     table.add_row("", "")  # Spacer
-                    table.add_row("Cache entries", f"[cyan]{cache_stats.get('active', 0)}[/cyan] active, [dim]{cache_stats.get('expired', 0)} expired[/dim]")
+                    table.add_row(
+                        "Cache entries",
+                        f"[cyan]{cache_stats.get('active', 0)}[/cyan] active, [dim]{cache_stats.get('expired', 0)} expired[/dim]",
+                    )
 
                 console.print(table)
 
             # Cleanup expired cache entries
-            if cache_stats.get('expired', 0) > 0:
+            if cache_stats.get("expired", 0) > 0:
                 expired_cleaned = self.db.cleanup_expired_cache()
                 if expired_cleaned > 0:
                     console.print(f"[dim]  Cleaned up {expired_cleaned} expired cache entries[/dim]")
@@ -1139,11 +1119,9 @@ Boss name:"""
 
             videos_to_process = []
             for record in pending + failed:
-                videos_to_process.append({
-                    'id': record['video_id'],
-                    'title': record['original_title'],
-                    'published_at': ''
-                })
+                videos_to_process.append(
+                    {"id": record["video_id"], "title": record["original_title"], "published_at": ""}
+                )
 
             if videos_to_process:
                 console.print(f"[cyan]Found {len(videos_to_process)} videos to resume[/cyan]\n")
@@ -1159,19 +1137,19 @@ Boss name:"""
 
         # Filter for specific video ID if provided
         if video_id:
-            videos = [v for v in videos if v['id'] == video_id]
+            videos = [v for v in videos if v["id"] == video_id]
             if not videos:
                 console.print(f"\n[red]Error: Video ID {video_id} not found![/red]")
                 return
             console.print(f"[cyan]Processing specific video: {video_id}[/cyan]")
 
         # Filter for default PS5 titles
-        ps5_videos = [v for v in videos if self.is_default_ps5_title(v['title'])]
+        ps5_videos = [v for v in videos if self.is_default_ps5_title(v["title"])]
         console.print(f"[cyan]Found {len(ps5_videos)} videos with default PS5 titles[/cyan]")
 
         # Filter by game name if provided
         if game:
-            ps5_videos = [v for v in ps5_videos if game.lower() in self.extract_game_name(v['title']).lower()]
+            ps5_videos = [v for v in ps5_videos if game.lower() in self.extract_game_name(v["title"]).lower()]
             console.print(f"[cyan]Filtered to {len(ps5_videos)} videos matching game '{game}'[/cyan]")
 
         # Apply limit if provided
@@ -1206,10 +1184,10 @@ Boss name:"""
         total_cost = thumbnail_cost + frame_cost
 
         return {
-            'thumbnail': thumbnail_cost,
-            'frame_extraction': frame_cost,
-            'total': total_cost,
-            'per_video': total_cost / num_videos if num_videos > 0 else 0
+            "thumbnail": thumbnail_cost,
+            "frame_extraction": frame_cost,
+            "total": total_cost,
+            "per_video": total_cost / num_videos if num_videos > 0 else 0,
         }
 
     def _show_cost_estimate(self, num_videos: int) -> None:
@@ -1235,7 +1213,9 @@ Boss name:"""
         console.print(table)
         console.print()
 
-    def _process_video_list(self, videos: List[Dict[str, str]], dry_run: bool, force: bool, workers: Optional[int] = None) -> None:
+    def _process_video_list(
+        self, videos: List[Dict[str, str]], dry_run: bool, force: bool, workers: Optional[int] = None
+    ) -> None:
         """
         Process a list of videos with rich progress bar and optional parallel processing.
 
@@ -1258,9 +1238,9 @@ Boss name:"""
             use_parallel = True
         elif workers is None:
             # Check config
-            parallel_enabled = self.config.get('processing.parallel.enabled', False)
+            parallel_enabled = self.config.get("processing.parallel.enabled", False)
             if parallel_enabled:
-                workers = self.config.get('processing.parallel.workers', 3)
+                workers = self.config.get("processing.parallel.workers", 3)
                 use_parallel = True
 
         if use_parallel and not dry_run:
@@ -1272,7 +1252,7 @@ Boss name:"""
         processed = 0
         failed = 0
         skipped = 0
-        rate_limit = self.config.get('youtube.rate_limit_delay', 2)
+        rate_limit = self.config.get("youtube.rate_limit_delay", 2)
 
         # Create progress bar
         with Progress(
@@ -1281,38 +1261,37 @@ Boss name:"""
             BarColumn(),
             TaskProgressColumn(),
             TimeRemainingColumn(),
-            console=console
+            console=console,
         ) as progress:
 
-            task = progress.add_task(
-                f"[cyan]Processing videos...",
-                total=len(videos)
-            )
+            task = progress.add_task("[cyan]Processing videos...", total=len(videos))
 
             for i, video in enumerate(videos, 1):
-                video_title = video['title'][:50] + "..." if len(video['title']) > 50 else video['title']
+                video_title = video["title"][:50] + "..." if len(video["title"]) > 50 else video["title"]
                 progress.update(task, description=f"[cyan]Processing: {video_title}")
 
                 if dry_run:
-                    console.print(f"\n[dim][{i}/{len(videos)}][/dim] [yellow][DRY RUN][/yellow] Would process: {video['title']}")
-                    game_name = self.extract_game_name(video['title'])
+                    console.print(
+                        f"\n[dim][{i}/{len(videos)}][/dim] [yellow][DRY RUN][/yellow] Would process: {video['title']}"
+                    )
+                    game_name = self.extract_game_name(video["title"])
                     console.print(f"  Game: {game_name}")
                     console.print(f"  Souls-like: {self.is_soulslike(game_name)}")
                 else:
                     result = self.process_video(video, force=force)
                     if result:
                         processed += 1
-                        console.print(f"[green]✓[/green] Processed successfully", style="dim")
+                        console.print("[green]✓[/green] Processed successfully", style="dim")
                     elif result is False:
                         # Check if it was skipped or failed
-                        video_id = video['id']
+                        video_id = video["id"]
                         db_record = self.db.get_video(video_id)
-                        if db_record and db_record['status'] == 'failed':
+                        if db_record and db_record["status"] == "failed":
                             failed += 1
-                            console.print(f"[red]✗[/red] Failed", style="dim")
+                            console.print("[red]✗[/red] Failed", style="dim")
                         else:
                             skipped += 1
-                            console.print(f"[yellow]⊘[/yellow] Skipped", style="dim")
+                            console.print("[yellow]⊘[/yellow] Skipped", style="dim")
 
                     # Rate limiting
                     if i < len(videos):  # Don't sleep after last video
@@ -1337,11 +1316,9 @@ Boss name:"""
         console.print()
 
         if dry_run:
-            console.print(Panel(
-                f"[yellow]Would process {total} videos[/yellow]",
-                title="Dry Run Summary",
-                border_style="yellow"
-            ))
+            console.print(
+                Panel(f"[yellow]Would process {total} videos[/yellow]", title="Dry Run Summary", border_style="yellow")
+            )
         else:
             # Create summary table
             table = Table(title="📊 Processing Summary", box=box.ROUNDED)
@@ -1368,10 +1345,10 @@ Boss name:"""
             table2.add_column("Status", style="cyan")
             table2.add_column("Count", justify="right")
 
-            table2.add_row("[green]Completed[/green]", str(stats.get('completed', 0)))
-            table2.add_row("[red]Failed[/red]", str(stats.get('failed', 0)))
-            table2.add_row("[yellow]Pending[/yellow]", str(stats.get('pending', 0)))
-            table2.add_row("[cyan]Total[/cyan]", str(stats.get('total', 0)), style="bold")
+            table2.add_row("[green]Completed[/green]", str(stats.get("completed", 0)))
+            table2.add_row("[red]Failed[/red]", str(stats.get("failed", 0)))
+            table2.add_row("[yellow]Pending[/yellow]", str(stats.get("pending", 0)))
+            table2.add_row("[cyan]Total[/cyan]", str(stats.get("total", 0)), style="bold")
 
             console.print(table2)
             console.print()
@@ -1385,16 +1362,12 @@ Boss name:"""
             force: Reprocess already-processed videos
             workers: Number of parallel workers
         """
-        from concurrent.futures import ThreadPoolExecutor, as_completed
         import threading
-
-        processed = 0
-        failed = 0
-        skipped = 0
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         # Create thread-safe lock for shared resources
         lock = threading.Lock()
-        results = {'processed': 0, 'failed': 0, 'skipped': 0}
+        results = {"processed": 0, "failed": 0, "skipped": 0}
 
         def process_video_wrapper(video: Dict) -> Dict:
             """Wrapper to process video and return result"""
@@ -1403,22 +1376,22 @@ Boss name:"""
 
                 with lock:
                     if result:
-                        results['processed'] += 1
-                        return {'status': 'processed', 'video': video}
+                        results["processed"] += 1
+                        return {"status": "processed", "video": video}
                     else:
                         # Check if it was skipped or failed
-                        video_id = video['id']
+                        video_id = video["id"]
                         db_record = self.db.get_video(video_id)
-                        if db_record and db_record['status'] == 'failed':
-                            results['failed'] += 1
-                            return {'status': 'failed', 'video': video}
+                        if db_record and db_record["status"] == "failed":
+                            results["failed"] += 1
+                            return {"status": "failed", "video": video}
                         else:
-                            results['skipped'] += 1
-                            return {'status': 'skipped', 'video': video}
+                            results["skipped"] += 1
+                            return {"status": "skipped", "video": video}
             except Exception as e:
                 with lock:
-                    results['failed'] += 1
-                return {'status': 'error', 'video': video, 'error': str(e)}
+                    results["failed"] += 1
+                return {"status": "error", "video": video, "error": str(e)}
 
         # Create progress bar
         with Progress(
@@ -1427,13 +1400,10 @@ Boss name:"""
             BarColumn(),
             TaskProgressColumn(),
             TimeRemainingColumn(),
-            console=console
+            console=console,
         ) as progress:
 
-            task = progress.add_task(
-                f"[cyan]Processing videos with {workers} workers...",
-                total=len(videos)
-            )
+            task = progress.add_task(f"[cyan]Processing videos with {workers} workers...", total=len(videos))
 
             # Process videos in parallel
             with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -1445,11 +1415,11 @@ Boss name:"""
                     video = future_to_video[future]
                     try:
                         result = future.result()
-                        status = result['status']
+                        status = result["status"]
 
-                        if status == 'processed':
+                        if status == "processed":
                             console.print(f"[green]✓[/green] {video['title'][:50]}... processed", style="dim")
-                        elif status == 'failed' or status == 'error':
+                        elif status == "failed" or status == "error":
                             console.print(f"[red]✗[/red] {video['title'][:50]}... failed", style="dim")
                         else:
                             console.print(f"[yellow]⊘[/yellow] {video['title'][:50]}... skipped", style="dim")
@@ -1457,12 +1427,12 @@ Boss name:"""
                     except Exception as e:
                         console.print(f"[red]✗[/red] {video['title'][:50]}... error: {e}", style="dim")
                         with lock:
-                            results['failed'] += 1
+                            results["failed"] += 1
 
                     progress.update(task, advance=1)
 
         # Print summary
-        self._print_summary(len(videos), results['processed'], results['failed'], results['skipped'], False)
+        self._print_summary(len(videos), results["processed"], results["failed"], results["skipped"], False)
 
 
 def main() -> int:
@@ -1478,99 +1448,55 @@ def main() -> int:
         0
     """
     parser = argparse.ArgumentParser(
-        description='YouTube Boss Title Updater - Automatically update PS5 game videos with boss names',
+        description="YouTube Boss Title Updater - Automatically update PS5 game videos with boss names",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog='''
+        epilog="""
 Examples:
   %(prog)s --dry-run                      # Preview changes without applying
   %(prog)s --video-id abc123 --force      # Process specific video
   %(prog)s --game "Bloodborne" --limit 5  # Process 5 Bloodborne videos
   %(prog)s --list-games                   # Show all detected games
   %(prog)s --config prod.yml              # Use custom config file
-        '''
+        """,
+    )
+
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+
+    parser.add_argument("--dry-run", action="store_true", help="Preview what would be done without making changes")
+
+    parser.add_argument(
+        "--config", type=str, metavar="PATH", help="Path to custom configuration file (default: use built-in config)"
+    )
+
+    parser.add_argument("--video-id", type=str, metavar="ID", help="Process only this specific video ID")
+
+    parser.add_argument(
+        "--game", type=str, metavar="NAME", help="Filter videos by game name (case-insensitive partial match)"
+    )
+
+    parser.add_argument("--limit", type=int, metavar="N", help="Process only N videos (after filtering)")
+
+    parser.add_argument("--force", action="store_true", help="Reprocess videos that have already been processed")
+
+    parser.add_argument("--list-games", action="store_true", help="List all detected games with video counts and exit")
+
+    parser.add_argument(
+        "--resume", action="store_true", help="Resume processing pending and failed videos from database"
+    )
+
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output (DEBUG level logging)")
+
+    parser.add_argument("--quiet", "-q", action="store_true", help="Minimal output (WARNING level and above only)")
+
+    parser.add_argument(
+        "--clear-cache", action="store_true", help="Clear all cached boss identification results and exit"
     )
 
     parser.add_argument(
-        '--version',
-        action='version',
-        version=f'%(prog)s {__version__}'
-    )
-
-    parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Preview what would be done without making changes'
-    )
-
-    parser.add_argument(
-        '--config',
-        type=str,
-        metavar='PATH',
-        help='Path to custom configuration file (default: use built-in config)'
-    )
-
-    parser.add_argument(
-        '--video-id',
-        type=str,
-        metavar='ID',
-        help='Process only this specific video ID'
-    )
-
-    parser.add_argument(
-        '--game',
-        type=str,
-        metavar='NAME',
-        help='Filter videos by game name (case-insensitive partial match)'
-    )
-
-    parser.add_argument(
-        '--limit',
+        "--workers",
         type=int,
-        metavar='N',
-        help='Process only N videos (after filtering)'
-    )
-
-    parser.add_argument(
-        '--force',
-        action='store_true',
-        help='Reprocess videos that have already been processed'
-    )
-
-    parser.add_argument(
-        '--list-games',
-        action='store_true',
-        help='List all detected games with video counts and exit'
-    )
-
-    parser.add_argument(
-        '--resume',
-        action='store_true',
-        help='Resume processing pending and failed videos from database'
-    )
-
-    parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='Enable verbose output (DEBUG level logging)'
-    )
-
-    parser.add_argument(
-        '--quiet', '-q',
-        action='store_true',
-        help='Minimal output (WARNING level and above only)'
-    )
-
-    parser.add_argument(
-        '--clear-cache',
-        action='store_true',
-        help='Clear all cached boss identification results and exit'
-    )
-
-    parser.add_argument(
-        '--workers',
-        type=int,
-        metavar='N',
-        help='Number of parallel workers for video processing (default: 1 for sequential, recommend 3-5 for parallel)'
+        metavar="N",
+        help="Number of parallel workers for video processing (default: 1 for sequential, recommend 3-5 for parallel)",
     )
 
     args = parser.parse_args()
@@ -1578,11 +1504,7 @@ Examples:
     # Setup logging
     global logger
     logger = setup_logging(
-        log_level='INFO',
-        verbose=args.verbose,
-        quiet=args.quiet,
-        console_output=True,
-        json_format=True
+        log_level="INFO", verbose=args.verbose, quiet=args.quiet, console_output=True, json_format=True
     )
 
     logger.info(f"YouTube Boss Title Updater v{__version__} starting")
@@ -1642,7 +1564,7 @@ Examples:
             limit=args.limit,
             force=args.force,
             resume=args.resume,
-            workers=args.workers
+            workers=args.workers,
         )
         logger.info("Processing completed successfully")
     except KeyboardInterrupt:
@@ -1653,11 +1575,12 @@ Examples:
         print(f"\nError during execution: {e}")
         logger.critical(f"Fatal error during execution: {e}", exc_info=True)
         import traceback
+
         traceback.print_exc()
         return 1
 
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     exit(main())
