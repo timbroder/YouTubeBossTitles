@@ -27,6 +27,7 @@ dist/
 # Testing
 .pytest_cache/
 .coverage
+coverage.xml
 htmlcov/
 *.cover
 .hypothesis/
