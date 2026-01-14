@@ -1,7 +1,7 @@
 # YouTube Boss Title Updater
 
 [![Tests](https://github.com/timbroder/YouTubeBossTitles/workflows/Tests/badge.svg)](https://github.com/timbroder/YouTubeBossTitles/actions)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 
 Automatically updates PS5 game video titles with boss names using AI vision analysis.
 
@@ -23,7 +23,7 @@ Automatically updates PS5 game video titles with boss names using AI vision anal
 
 ## Prerequisites
 
-- Python 3.8 or higher
+- Python 3.9 or higher
 - ffmpeg installed on your system (for video frame extraction)
 - YouTube channel with videos
 - Google Cloud account (for YouTube API and Google Sheets)
