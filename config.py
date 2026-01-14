@@ -20,6 +20,9 @@ class Config:
             "model": "gpt-4o",
             "max_tokens": 100,
         },
+        "rawg": {
+            "api_key": "${RAWG_API_KEY}",  # Optional: for gaming API integration
+        },
         "youtube": {
             "log_spreadsheet_name": "YouTube Boss Title Updates",
             "rate_limit_delay": 2,  # seconds between video processing
@@ -165,6 +168,13 @@ openai:
   # api_key: "sk-..."
   model: "gpt-4o"
   max_tokens: 100
+
+# RAWG Gaming API Configuration (Optional)
+# Get your free API key at https://rawg.io/apidocs
+rawg:
+  api_key: "${RAWG_API_KEY}"
+  # Or set directly
+  # api_key: "your-rawg-api-key"
 
 # YouTube Configuration
 youtube:
