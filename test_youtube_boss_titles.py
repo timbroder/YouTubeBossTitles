@@ -320,6 +320,8 @@ class TestBossIdentification:
 
         updater.openai_client.chat.completions.create = Mock(return_value=mock_response)
         updater.get_video_thumbnail_url = Mock(return_value='http://thumbnail.jpg')
+        # Mock cache miss
+        updater.db.get_cached_boss = Mock(return_value=None)
 
         boss_name = updater.identify_boss('video123', 'Bloodborne')
 
@@ -339,6 +341,8 @@ class TestBossIdentification:
         )
         updater.get_video_thumbnail_url = Mock(return_value='http://thumbnail.jpg')
         updater.extract_video_frames = Mock(return_value=['frame1', 'frame2'])
+        # Mock cache miss
+        updater.db.get_cached_boss = Mock(return_value=None)
 
         boss_name = updater.identify_boss('video123', 'Bloodborne')
 
@@ -667,6 +671,8 @@ class TestEdgeCases:
         updater.openai_client.chat.completions.create = Mock(return_value=mock_response)
 
         updater.extract_video_frames = Mock(return_value=[])
+        # Mock cache miss
+        updater.db.get_cached_boss = Mock(return_value=None)
 
         result = updater.identify_boss('video123', 'Bloodborne')
 
@@ -949,7 +955,8 @@ class TestCachingSystem:
         assert stats['total'] == 2
         assert stats['active'] == 1
         assert stats['expired'] == 1
-        assert stats['max_accessed'] == 5
+        # cache_boss sets accessed_count to 1, then 5 get_cached_boss calls add 5 more = 6 total
+        assert stats['max_accessed'] == 6
 
     def test_cache_integration_with_identify_boss(self, mock_config):
         """Test cache integration with boss identification"""

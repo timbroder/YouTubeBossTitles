@@ -5,6 +5,7 @@ Configuration handling for YouTube Boss Title Updater
 
 import os
 import yaml
+import copy
 from typing import Optional, Dict, Any
 from pathlib import Path
 
@@ -60,7 +61,7 @@ class Config:
 
     def __init__(self, config_path: Optional[str] = None):
         """Initialize configuration from file or defaults"""
-        self.config = self.DEFAULT_CONFIG.copy()
+        self.config = copy.deepcopy(self.DEFAULT_CONFIG)
 
         if config_path:
             self.load_from_file(config_path)
