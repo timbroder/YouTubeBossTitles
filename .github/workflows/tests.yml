@@ -31,6 +31,12 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
+    - name: Run type checking with mypy
+      run: |
+        pip install mypy types-PyYAML types-requests
+        mypy --config-file mypy.ini --show-error-codes --pretty .
+      continue-on-error: true  # Don't fail the build on type errors initially
+
     - name: Run tests with pytest
       run: |
         pytest --cov=youtube_boss_titles --cov-report=xml --cov-report=term-missing

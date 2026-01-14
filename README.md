@@ -357,6 +357,68 @@ The spreadsheet will be created in your Google Drive and can be shared with othe
 - Test with: `ffmpeg -version`
 - See installation instructions above
 
+## Development (Sprint 4: Code Quality)
+
+### Type Hints and Static Analysis
+
+The project now includes comprehensive type hints for all functions and methods:
+
+- **Type Hints**: All functions have complete type annotations
+- **Docstrings**: All public methods include detailed docstrings with examples
+- **MyPy**: Static type checking configured with `mypy.ini`
+
+Run type checking:
+```bash
+mypy --config-file mypy.ini .
+```
+
+### Code Formatting and Linting
+
+The project uses modern Python code quality tools:
+
+- **Black**: Opinionated code formatter (line length: 120)
+- **Ruff**: Fast Python linter with auto-fix
+- **Pre-commit**: Git hooks for automated checks
+
+#### Setup Pre-commit Hooks
+
+Install pre-commit hooks to automatically format and check code before commits:
+
+```bash
+# Install pre-commit hooks
+pre-commit install
+
+# Run hooks manually on all files
+pre-commit run --all-files
+```
+
+The pre-commit hooks will automatically:
+- Format code with Black
+- Lint and fix issues with Ruff
+- Check types with MyPy
+- Fix trailing whitespace and line endings
+- Validate YAML, JSON, and TOML files
+
+#### Manual Formatting
+
+Format code manually:
+```bash
+# Format all Python files
+black .
+
+# Lint and auto-fix issues
+ruff check --fix .
+
+# Type check
+mypy .
+```
+
+### Configuration Files
+
+- `mypy.ini` - MyPy type checker configuration
+- `pyproject.toml` - Black, Ruff, and pytest configuration
+- `.pre-commit-config.yaml` - Pre-commit hooks configuration
+
 ## Testing
 
 The project includes comprehensive unit and integration tests.

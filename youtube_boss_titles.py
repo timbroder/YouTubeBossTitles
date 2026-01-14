@@ -11,7 +11,7 @@ import base64
 import tempfile
 import subprocess
 import argparse
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any, Union
 from datetime import datetime
 from pathlib import Path
 import time
@@ -73,8 +73,20 @@ SOULSLIKE_GAMES = [
 
 
 class YouTubeBossUpdater:
-    def __init__(self, config: Config, logger_instance: logging.Logger = None, db_path: str = 'processed_videos.db'):
-        """Initialize the updater with configuration"""
+    def __init__(self, config: Config, logger_instance: Optional[logging.Logger] = None, db_path: str = 'processed_videos.db') -> None:
+        """
+        Initialize the updater with configuration.
+
+        Args:
+            config: Configuration object with all settings
+            logger_instance: Optional logger instance (creates default if not provided)
+            db_path: Path to SQLite database file (or ':memory:' for in-memory)
+
+        Example:
+            >>> config = Config()
+            >>> updater = YouTubeBossUpdater(config)
+            >>> updater.authenticate_youtube()
+        """
         self.config = config
         self.youtube = None
         self.sheets_client = None
@@ -87,8 +99,22 @@ class YouTubeBossUpdater:
         self.max_retries = config.get('processing.retry.max_attempts', 3)
         self.logger = logger_instance or logging.getLogger('youtube_boss_updater')
 
-    def authenticate_youtube(self):
-        """Authenticate with YouTube API"""
+    def authenticate_youtube(self) -> None:
+        """
+        Authenticate with YouTube API using OAuth 2.0.
+
+        Creates YouTube API and Google Sheets clients. Handles token refresh
+        and initial authentication flow if needed.
+
+        Raises:
+            FileNotFoundError: If client_secret.json is not found
+            Exception: If authentication fails
+
+        Example:
+            >>> updater = YouTubeBossUpdater(config)
+            >>> updater.authenticate_youtube()
+            ✓ YouTube authentication successful
+        """
         creds = None
 
         # Token file stores user's access and refresh tokens
@@ -120,8 +146,17 @@ class YouTubeBossUpdater:
         print("✓ Google Sheets authentication successful")
         self.logger.info("Google Sheets authentication successful")
 
-    def setup_log_spreadsheet(self):
-        """Create or open the log spreadsheet and set up headers"""
+    def setup_log_spreadsheet(self) -> None:
+        """
+        Create or open the log spreadsheet and set up headers.
+
+        Creates a Google Sheet with two tabs: "Processed Videos" and "Errors".
+        Loads previously processed video IDs from the sheet to avoid duplicates.
+
+        Example:
+            >>> updater.setup_log_spreadsheet()
+            ✓ Opened existing log spreadsheet: YouTube Boss Title Updates
+        """
         try:
             # Try to open existing spreadsheet
             spreadsheet = self.sheets_client.open(self.log_spreadsheet_name)
@@ -164,8 +199,8 @@ class YouTubeBossUpdater:
             print(f"✓ Created new log spreadsheet: {self.log_spreadsheet_name}")
             print(f"  Spreadsheet URL: {spreadsheet.url}")
 
-    def _setup_error_sheet_headers(self):
-        """Setup headers for the Errors sheet"""
+    def _setup_error_sheet_headers(self) -> None:
+        """Setup headers for the Errors sheet."""
         if not self.error_sheet:
             return
 
@@ -182,8 +217,8 @@ class YouTubeBossUpdater:
         self.error_sheet.append_row(error_headers)
         self.error_sheet.format('A1:H1', {'textFormat': {'bold': True}})
 
-    def _load_processed_videos(self):
-        """Load video IDs that have already been processed from Google Sheets"""
+    def _load_processed_videos(self) -> None:
+        """Load video IDs that have already been processed from Google Sheets."""
         if not self.log_sheet:
             return
 
@@ -201,8 +236,24 @@ class YouTubeBossUpdater:
             print(f"  ⚠ Warning: Could not load processed videos: {e}")
 
     def log_video_update(self, video_id: str, original_title: str, new_title: str,
-                        playlist_name: str, playlist_id: Optional[str]):
-        """Log video update to Google Sheets"""
+                        playlist_name: str, playlist_id: Optional[str]) -> None:
+        """
+        Log video update to Google Sheets.
+
+        Args:
+            video_id: YouTube video ID
+            original_title: Original PS5 title
+            new_title: Updated title with boss name
+            playlist_name: Name of the playlist
+            playlist_id: YouTube playlist ID (or None if not added to playlist)
+
+        Example:
+            >>> updater.log_video_update(
+            ...     "abc123", "Bloodborne_20250101120000",
+            ...     "Bloodborne: Father Gascoigne Melee PS5",
+            ...     "Bloodborne", "PLabc123"
+            ... )
+        """
         if not self.log_sheet:
             print("  ⚠ Warning: Log sheet not initialized, skipping logging")
             return
@@ -228,8 +279,18 @@ class YouTubeBossUpdater:
             print(f"  ⚠ Warning: Failed to log to spreadsheet: {e}")
 
     def log_error_to_sheet(self, video_id: str, video_title: str, game_name: str,
-                          error_type: str, error_message: str, attempts: int = 1):
-        """Log error to Google Sheets Errors tab"""
+                          error_type: str, error_message: str, attempts: int = 1) -> None:
+        """
+        Log error to Google Sheets Errors tab.
+
+        Args:
+            video_id: YouTube video ID
+            video_title: Title of the video
+            game_name: Extracted game name
+            error_type: Type of error (e.g., 'boss_identification_failed')
+            error_message: Detailed error message
+            attempts: Number of attempts made
+        """
         if not self.error_sheet:
             self.logger.warning("Error sheet not initialized, skipping error logging")
             return
@@ -261,25 +322,77 @@ class YouTubeBossUpdater:
             self.logger.warning(f"Failed to log error to spreadsheet: {e}")
 
     def is_default_ps5_title(self, title: str) -> bool:
-        """Check if video title matches PS5 default pattern"""
+        """
+        Check if video title matches PS5 default pattern.
+
+        Args:
+            title: Video title to check
+
+        Returns:
+            True if title matches PS5 pattern (GameName_YYYYMMDDHHMMSS)
+
+        Example:
+            >>> updater.is_default_ps5_title("Bloodborne_20250101120000")
+            True
+            >>> updater.is_default_ps5_title("My Custom Title")
+            False
+        """
         # Pattern: GameName_YYYYMMDDHHMMSS or GameName_YYYYMMDDHHMMSS
         pattern = r'.+_\d{14}$'
         return bool(re.match(pattern, title))
 
     def extract_game_name(self, title: str) -> str:
-        """Extract game name from PS5 default title"""
+        """
+        Extract game name from PS5 default title.
+
+        Args:
+            title: PS5 title with timestamp
+
+        Returns:
+            Game name without timestamp
+
+        Example:
+            >>> updater.extract_game_name("Bloodborne_20250101120000")
+            'Bloodborne'
+        """
         # Remove timestamp pattern
         game_name = re.sub(r'_\d{14}$', '', title)
         return game_name.strip()
 
     def is_soulslike(self, game_name: str) -> bool:
-        """Check if game is a souls-like that should get 'Melee' tag"""
+        """
+        Check if game is a souls-like that should get 'Melee' tag.
+
+        Args:
+            game_name: Name of the game to check
+
+        Returns:
+            True if game is souls-like
+
+        Example:
+            >>> updater.is_soulslike("Bloodborne")
+            True
+            >>> updater.is_soulslike("Clair Obscur")
+            False
+        """
         game_lower = game_name.lower()
         soulslike_games = self.config.get('soulslike_games', SOULSLIKE_GAMES)
         return any(souls_game in game_lower for souls_game in soulslike_games)
 
-    def get_my_videos(self) -> List[Dict]:
-        """Fetch all videos from user's channel"""
+    def get_my_videos(self) -> List[Dict[str, str]]:
+        """
+        Fetch all videos from user's channel.
+
+        Returns:
+            List of video dictionaries with 'id', 'title', and 'published_at' keys
+
+        Example:
+            >>> videos = updater.get_my_videos()
+            >>> len(videos)
+            150
+            >>> videos[0].keys()
+            dict_keys(['id', 'title', 'published_at'])
+        """
         videos = []
 
         # Get the uploads playlist ID
@@ -322,13 +435,41 @@ class YouTubeBossUpdater:
         return videos
 
     def get_video_thumbnail_url(self, video_id: str) -> str:
-        """Get the default YouTube thumbnail URL"""
+        """
+        Get the default YouTube thumbnail URL.
+
+        Args:
+            video_id: YouTube video ID
+
+        Returns:
+            URL to the video's max resolution thumbnail
+
+        Example:
+            >>> updater.get_video_thumbnail_url("abc123")
+            'https://img.youtube.com/vi/abc123/maxresdefault.jpg'
+        """
         return f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
 
-    def extract_video_frames(self, video_id: str, timestamps: List[int] = None) -> List[str]:
+    def extract_video_frames(self, video_id: str, timestamps: Optional[List[int]] = None) -> List[str]:
         """
-        Extract frames from video at specific timestamps using yt-dlp
-        Returns list of base64-encoded image data URLs
+        Extract frames from video at specific timestamps using yt-dlp.
+
+        Downloads first 90 seconds of video and extracts frames at specified
+        timestamps using ffmpeg.
+
+        Args:
+            video_id: YouTube video ID
+            timestamps: List of timestamps in seconds (defaults to config values)
+
+        Returns:
+            List of base64-encoded image data URLs
+
+        Example:
+            >>> frames = updater.extract_video_frames("abc123", [10, 20, 30])
+            >>> len(frames)
+            3
+            >>> frames[0].startswith("data:image/jpeg;base64,")
+            True
         """
         if timestamps is None:
             # Get timestamps from config
@@ -403,15 +544,39 @@ class YouTubeBossUpdater:
 
     def get_boss_list(self, game_name: str) -> List[str]:
         """
-        Search for boss list for the game online
-        This is a simplified version - could be enhanced with web scraping
+        Search for boss list for the game online.
+
+        Args:
+            game_name: Name of the game
+
+        Returns:
+            List of known boss names (currently returns empty list)
+
+        Note:
+            This is a placeholder for future enhancements with web scraping
+            or gaming API integration.
         """
         # For now, return empty list - the LLM will identify the boss from the video
         # In a more sophisticated version, you could scrape wikis, use gaming APIs, etc.
         return []
 
     def identify_boss_from_images(self, image_urls: List[str], game_name: str) -> Optional[str]:
-        """Use OpenAI Vision to identify boss from one or more images"""
+        """
+        Use OpenAI Vision to identify boss from one or more images.
+
+        Args:
+            image_urls: List of image URLs or base64-encoded data URLs
+            game_name: Name of the game
+
+        Returns:
+            Boss name if identified, None otherwise
+
+        Example:
+            >>> images = ["data:image/jpeg;base64,/9j/4AAQ..."]
+            >>> boss = updater.identify_boss_from_images(images, "Bloodborne")
+            >>> boss
+            'Father Gascoigne'
+        """
         # Get potential boss list
         boss_list = self.get_boss_list(game_name)
         boss_context = f"\n\nKnown bosses in {game_name}: {', '.join(boss_list)}" if boss_list else ""
@@ -544,7 +709,22 @@ Boss name:"""
                 raise
 
     def format_title(self, game_name: str, boss_name: str) -> str:
-        """Format the video title according to specifications"""
+        """
+        Format the video title according to specifications.
+
+        Args:
+            game_name: Name of the game
+            boss_name: Name of the boss
+
+        Returns:
+            Formatted title with or without 'Melee' tag
+
+        Example:
+            >>> updater.format_title("Bloodborne", "Father Gascoigne")
+            'Bloodborne: Father Gascoigne Melee PS5'
+            >>> updater.format_title("Clair Obscur", "Final Boss")
+            'Clair Obscur: Final Boss PS5'
+        """
         is_souls = self.is_soulslike(game_name)
 
         if is_souls:
@@ -553,7 +733,24 @@ Boss name:"""
             return f"{game_name}: {boss_name} PS5"
 
     def update_video_title(self, video_id: str, new_title: str) -> bool:
-        """Update the video title on YouTube"""
+        """
+        Update the video title on YouTube.
+
+        Args:
+            video_id: YouTube video ID
+            new_title: New title to set
+
+        Returns:
+            True if update successful, False otherwise
+
+        Example:
+            >>> success = updater.update_video_title(
+            ...     "abc123",
+            ...     "Bloodborne: Father Gascoigne Melee PS5"
+            ... )
+            >>> success
+            True
+        """
         try:
             # Get current video details
             video_response = self.youtube.videos().list(
@@ -588,7 +785,20 @@ Boss name:"""
             return False
 
     def get_or_create_playlist(self, game_name: str) -> Optional[str]:
-        """Get existing playlist for game or create new one"""
+        """
+        Get existing playlist for game or create new one.
+
+        Args:
+            game_name: Name of the game
+
+        Returns:
+            Playlist ID if successful, None otherwise
+
+        Example:
+            >>> playlist_id = updater.get_or_create_playlist("Bloodborne")
+            >>> playlist_id
+            'PLabc123xyz'
+        """
         # Search for existing playlist
         playlists_response = self.youtube.playlists().list(
             part='snippet',
@@ -625,7 +835,21 @@ Boss name:"""
             return None
 
     def add_video_to_playlist(self, video_id: str, playlist_id: str) -> bool:
-        """Add video to playlist"""
+        """
+        Add video to playlist.
+
+        Args:
+            video_id: YouTube video ID
+            playlist_id: YouTube playlist ID
+
+        Returns:
+            True if successful, False otherwise
+
+        Example:
+            >>> success = updater.add_video_to_playlist("abc123", "PLabc123")
+            >>> success
+            True
+        """
         try:
             self.youtube.playlistItems().insert(
                 part='snippet',
@@ -651,8 +875,23 @@ Boss name:"""
             print(f"  ✗ Error adding to playlist: {e}")
             return False
 
-    def process_video(self, video: Dict, force: bool = False) -> bool:
-        """Process a single video with database tracking and error handling"""
+    def process_video(self, video: Dict[str, str], force: bool = False) -> bool:
+        """
+        Process a single video with database tracking and error handling.
+
+        Args:
+            video: Video dictionary with 'id' and 'title' keys
+            force: If True, reprocess already-processed videos
+
+        Returns:
+            True if successfully processed, False otherwise
+
+        Example:
+            >>> video = {'id': 'abc123', 'title': 'Bloodborne_20250101120000'}
+            >>> success = updater.process_video(video)
+            >>> success
+            True
+        """
         video_id = video['id']
         title = video['title']
 
@@ -787,8 +1026,21 @@ Boss name:"""
             )
             return False
 
-    def list_games(self):
-        """List all detected games with video counts"""
+    def list_games(self) -> None:
+        """
+        List all detected games with video counts.
+
+        Fetches all videos and displays a summary of detected games
+        with their video counts.
+
+        Example:
+            >>> updater.list_games()
+            Found 150 videos with default PS5 titles
+            Detected games:
+            --------------------------------------------------
+              Bloodborne: 25 video(s) [SOULS-LIKE]
+              Clair Obscur: 10 video(s)
+        """
         print("Fetching videos...")
         videos = self.get_my_videos()
 
@@ -813,8 +1065,23 @@ Boss name:"""
 
     def run(self, dry_run: bool = False, video_id: Optional[str] = None,
             game: Optional[str] = None, limit: Optional[int] = None, force: bool = False,
-            resume: bool = False, workers: Optional[int] = None):
-        """Main execution function"""
+            resume: bool = False, workers: Optional[int] = None) -> None:
+        """
+        Main execution function.
+
+        Args:
+            dry_run: If True, preview changes without making them
+            video_id: Process only this specific video ID
+            game: Filter videos by game name
+            limit: Process only N videos (after filtering)
+            force: Reprocess already-processed videos
+            resume: Resume processing pending and failed videos
+            workers: Number of parallel workers (None for sequential)
+
+        Example:
+            >>> updater.run(dry_run=True, game="Bloodborne", limit=5)
+            [DRY RUN MODE - No changes will be made]
+        """
         # Print header
         console.print()
         console.print(Panel(
@@ -920,12 +1187,19 @@ Boss name:"""
 
     def _estimate_cost(self, num_videos: int) -> Dict[str, float]:
         """
-        Estimate processing costs
+        Estimate processing costs.
 
-        Rough estimates:
-        - Thumbnail analysis: $0.002 per video (1 image, gpt-4o)
-        - Frame extraction: $0.010 per video (5 images, gpt-4o) if thumbnail fails
-        - Assume 50% need frame extraction
+        Args:
+            num_videos: Number of videos to process
+
+        Returns:
+            Dictionary with cost breakdown
+
+        Note:
+            Rough estimates:
+            - Thumbnail analysis: $0.002 per video (1 image, gpt-4o)
+            - Frame extraction: $0.010 per video (5 images, gpt-4o) if thumbnail fails
+            - Assume 50% need frame extraction
         """
         thumbnail_cost = num_videos * 0.002
         frame_cost = num_videos * 0.5 * 0.010
@@ -938,8 +1212,13 @@ Boss name:"""
             'per_video': total_cost / num_videos if num_videos > 0 else 0
         }
 
-    def _show_cost_estimate(self, num_videos: int):
-        """Display cost estimate in a nice table"""
+    def _show_cost_estimate(self, num_videos: int) -> None:
+        """
+        Display cost estimate in a nice table.
+
+        Args:
+            num_videos: Number of videos to process
+        """
         costs = self._estimate_cost(num_videos)
 
         table = Table(title="💰 Estimated Processing Cost", box=box.ROUNDED)
@@ -956,8 +1235,16 @@ Boss name:"""
         console.print(table)
         console.print()
 
-    def _process_video_list(self, videos: List[Dict], dry_run: bool, force: bool, workers: Optional[int] = None):
-        """Process a list of videos with rich progress bar and optional parallel processing"""
+    def _process_video_list(self, videos: List[Dict[str, str]], dry_run: bool, force: bool, workers: Optional[int] = None) -> None:
+        """
+        Process a list of videos with rich progress bar and optional parallel processing.
+
+        Args:
+            videos: List of video dictionaries
+            dry_run: If True, preview without making changes
+            force: Reprocess already-processed videos
+            workers: Number of parallel workers (None for sequential)
+        """
         if dry_run:
             console.print("\n[yellow][DRY RUN MODE - No changes will be made][/yellow]\n")
 
@@ -1036,8 +1323,17 @@ Boss name:"""
         # Print summary
         self._print_summary(len(videos), processed, failed, skipped, dry_run)
 
-    def _print_summary(self, total: int, processed: int, failed: int, skipped: int, dry_run: bool):
-        """Print processing summary with rich formatting"""
+    def _print_summary(self, total: int, processed: int, failed: int, skipped: int, dry_run: bool) -> None:
+        """
+        Print processing summary with rich formatting.
+
+        Args:
+            total: Total number of videos
+            processed: Number of successfully processed videos
+            failed: Number of failed videos
+            skipped: Number of skipped videos
+            dry_run: Whether this was a dry run
+        """
         console.print()
 
         if dry_run:
@@ -1080,8 +1376,15 @@ Boss name:"""
             console.print(table2)
             console.print()
 
-    def _process_video_list_parallel(self, videos: List[Dict], force: bool, workers: int):
-        """Process videos in parallel using ThreadPoolExecutor"""
+    def _process_video_list_parallel(self, videos: List[Dict[str, str]], force: bool, workers: int) -> None:
+        """
+        Process videos in parallel using ThreadPoolExecutor.
+
+        Args:
+            videos: List of video dictionaries
+            force: Reprocess already-processed videos
+            workers: Number of parallel workers
+        """
         from concurrent.futures import ThreadPoolExecutor, as_completed
         import threading
 
@@ -1162,8 +1465,18 @@ Boss name:"""
         self._print_summary(len(videos), results['processed'], results['failed'], results['skipped'], False)
 
 
-def main():
-    """Main entry point"""
+def main() -> int:
+    """
+    Main entry point.
+
+    Returns:
+        Exit code (0 for success, non-zero for errors)
+
+    Example:
+        >>> exit_code = main()
+        >>> exit_code
+        0
+    """
     parser = argparse.ArgumentParser(
         description='YouTube Boss Title Updater - Automatically update PS5 game videos with boss names',
         formatter_class=argparse.RawDescriptionHelpFormatter,
