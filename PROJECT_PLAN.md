@@ -95,36 +95,36 @@ CREATE TABLE processed_videos (
 ## Phase 2: Enhanced Boss Detection
 
 ### 2.1 Gaming API Integration
-**Priority:** Medium | **Effort:** Medium | **Status:** 🔴
+**Priority:** Medium | **Effort:** Medium | **Status:** 🟢
 
 **Tasks:**
-- [ ] Implement RAWG API integration
-- [ ] Fetch game metadata (genre, tags, release date)
-- [ ] Use API to detect souls-like games dynamically
-- [ ] Cache API responses to reduce calls
-- [ ] Implement fallback to hardcoded list
+- [x] Implement RAWG API integration
+- [x] Fetch game metadata (genre, tags, release date)
+- [x] Use API to detect souls-like games dynamically
+- [x] Cache API responses to reduce calls
+- [x] Implement fallback to hardcoded list
 
-**Files to modify:**
-- New: `gaming_api.py` (API integration)
-- `youtube_boss_titles.py` (replace is_soulslike logic)
+**Files created:**
+- New: `gaming_api.py` (API integration) ✅
+- `youtube_boss_titles.py` (replace is_soulslike logic) ✅
 
 ### 2.2 Boss List Scraping
-**Priority:** Medium | **Effort:** Large | **Status:** 🔴
+**Priority:** Medium | **Effort:** Large | **Status:** 🟢
 
 **Tasks:**
-- [ ] Implement Wikipedia scraping for boss lists
-- [ ] Implement Fandom wiki scraping
-- [ ] Add BeautifulSoup4 to requirements
-- [ ] Cache scraped boss lists locally (JSON files)
-- [ ] Add boss list to OpenAI prompt for better context
-- [ ] Handle rate limiting and politeness delays
-- [ ] Add user-agent headers
+- [x] Implement Wikipedia scraping for boss lists
+- [x] Implement Fandom wiki scraping
+- [x] Add BeautifulSoup4 to requirements
+- [x] Cache scraped boss lists locally (JSON files)
+- [x] Add boss list to OpenAI prompt for better context
+- [x] Handle rate limiting and politeness delays
+- [x] Add user-agent headers
 
-**Files to modify:**
-- `requirements.txt` (add beautifulsoup4, lxml)
-- New: `boss_scraper.py` (web scraping)
-- New: `boss_lists/` directory (cached boss data)
-- `youtube_boss_titles.py` (integrate boss lists)
+**Files created:**
+- `requirements.txt` (add beautifulsoup4, lxml) ✅
+- New: `boss_scraper.py` (web scraping) ✅
+- New: `boss_lists/` directory (cached boss data) ✅
+- `youtube_boss_titles.py` (integrate boss lists) ✅
 
 ### 2.3 Confidence Scoring
 **Priority:** Low | **Effort:** Small | **Status:** 🔴
@@ -284,19 +284,19 @@ CREATE TABLE processed_videos (
 ## Phase 5: Data Management
 
 ### 5.1 Undo/Rollback System
-**Priority:** Medium | **Effort:** Medium | **Status:** 🔴
+**Priority:** Medium | **Effort:** Medium | **Status:** 🟢
 
 **Tasks:**
-- [ ] Store original titles in database before updating
-- [ ] Implement `--rollback <video_id>` command
-- [ ] Implement `--rollback-all` command
-- [ ] Add confirmation prompt for rollbacks
-- [ ] Update Google Sheets with rollback log
+- [x] Store original titles in database before updating
+- [x] Implement `--rollback <video_id>` command
+- [x] Implement `--rollback-all` command
+- [x] Add confirmation prompt for rollbacks
+- [x] Update Google Sheets with rollback log
 
-**Files to modify:**
-- `database.py` (store original data)
-- New: `rollback.py` (rollback logic)
-- `youtube_boss_titles.py` (add rollback commands)
+**Files created:**
+- `database.py` (store original data) ✅
+- New: `rollback.py` (rollback logic) ✅
+- `youtube_boss_titles.py` (add rollback commands) ✅
 
 ### 5.2 Audit Trail
 **Priority:** Low | **Effort:** Small | **Status:** 🔴
@@ -367,12 +367,13 @@ CREATE TABLE processed_videos (
 - [x] Add tests for resume/recovery system (database tests)
 - [x] Add tests for caching (7 comprehensive tests)
 - [x] Add tests for parallel processing (4 tests)
-- [x] Current code coverage: 54.58% (55 tests passing)
+- [x] Current code coverage: 49.70% (69 tests passing)
 - [x] Add integration tests for full workflows
+- [x] Add tests for Sprint 5 features (14 new tests)
 
 **Coverage Summary:**
-- **55 tests** passing
-- **54.58% overall coverage**
+- **69 tests** passing (was 55, added 14 in Sprint 5)
+- **49.70% overall coverage**
 - Key areas covered:
   - Title detection and formatting
   - Boss identification (thumbnail and frames)
@@ -381,6 +382,9 @@ CREATE TABLE processed_videos (
   - Error handling and logging
   - Database operations
   - Integration workflows
+  - Gaming API integration (RAWG)
+  - Boss scraping (Wikipedia and Fandom)
+  - Rollback system
 
 **Files modified:**
 - `test_youtube_boss_titles.py` (comprehensive test suite) ✅
@@ -656,13 +660,13 @@ Phase 9.1 (Dashboard) → Requires Phase 1.2 (Database)
 
 **Sprint 4 (Quality):** ✅ COMPLETED
 9. Phase 6.1 - Type Hints ✅
-10. Phase 6.3 - Test Coverage ✅ (55 tests, 54.58% coverage)
+10. Phase 6.3 - Test Coverage ✅ (69 tests, 49.70% coverage)
 11. Phase 6.2 - Pre-commit Hooks ✅
 
-**Sprint 5 (Features):**
-12. Phase 2.1 - Gaming API
-13. Phase 2.2 - Boss Scraping
-14. Phase 5.1 - Rollback System
+**Sprint 5 (Features):** ✅ COMPLETED
+12. Phase 2.1 - Gaming API ✅
+13. Phase 2.2 - Boss Scraping ✅
+14. Phase 5.1 - Rollback System ✅
 
 **Later Sprints:**
 - Advanced features as needed
