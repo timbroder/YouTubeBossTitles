@@ -10,6 +10,9 @@ Automatically updates PS5 game video titles with boss names using AI vision anal
 - Detects videos with default PS5 titles (e.g., `Bloodborne_20250321184741`)
 - Hybrid boss identification: tries thumbnail first, then extracts video frames if needed
 - Uses OpenAI GPT-4 Vision to identify boss names from multiple frames
+- **NEW in Sprint 5:** RAWG API integration for dynamic souls-like game detection
+- **NEW in Sprint 5:** Boss list scraping from Wikipedia and Fandom wikis for better context
+- **NEW in Sprint 5:** Rollback system to revert title changes with `--rollback` commands
 - **NEW in Sprint 3:** Intelligent caching system for boss identifications (30-day default expiry)
 - **NEW in Sprint 3:** Parallel processing support with configurable workers for faster batch processing
 - Updates titles to format: `[Game Name]: [Boss Name] PS5`
@@ -418,6 +421,81 @@ mypy .
 - `mypy.ini` - MyPy type checker configuration
 - `pyproject.toml` - Black, Ruff, and pytest configuration
 - `.pre-commit-config.yaml` - Pre-commit hooks configuration
+
+## Sprint 5: Enhanced Boss Detection and Rollback System
+
+Sprint 5 introduces powerful new features for better boss identification and the ability to undo changes.
+
+### RAWG Gaming API Integration
+
+The project now integrates with [RAWG.io](https://rawg.io/apidocs), a comprehensive gaming database API:
+
+- **Dynamic Souls-like Detection**: Uses API tags and genres to identify souls-like games automatically
+- **Fallback System**: Works without API key by falling back to hardcoded list
+- **Caching**: API responses are cached to minimize API calls (30-day expiry)
+
+**Setup (Optional):**
+```bash
+# Get free API key at https://rawg.io/apidocs
+export RAWG_API_KEY="your-api-key"
+# Or add to config.yml
+```
+
+### Boss List Scraping
+
+Automatically scrapes boss lists from gaming wikis to provide better context to the AI:
+
+- **Wikipedia**: Extracts boss names from Wikipedia game articles
+- **Fandom Wikis**: Scrapes dedicated Fandom game wikis (Bloodborne, Dark Souls, Elden Ring, etc.)
+- **Local Caching**: Boss lists are cached as JSON files in `boss_lists/` directory
+- **Rate Limiting**: Polite scraping with 2-second delays between requests
+- **Context Enhancement**: Boss lists are included in OpenAI prompts for more accurate identification
+
+Supported Fandom wikis:
+- Bloodborne, Dark Souls (1, 3), Elden Ring, Sekiro, Nioh, Lies of P
+
+**Files created:**
+- `gaming_api.py` - RAWG API integration
+- `boss_scraper.py` - Wikipedia and Fandom wiki scraping
+- `boss_lists/` - Cached boss lists (JSON files)
+
+### Rollback System
+
+Powerful undo functionality to revert title changes:
+
+**Rollback a specific video:**
+```bash
+python youtube_boss_titles.py --rollback VIDEO_ID
+```
+
+**Rollback all updated videos:**
+```bash
+python youtube_boss_titles.py --rollback-all
+```
+
+**List videos that can be rolled back:**
+```bash
+python youtube_boss_titles.py --list-rollback-candidates
+```
+
+**Features:**
+- Restores original titles from database
+- Confirmation prompts before rollback (can be skipped with `--yes`)
+- Logs rollbacks to Google Sheets with "ROLLBACK" status
+- Displays before/after comparison
+- Batch rollback with summary statistics
+
+**Example:**
+```bash
+$ python youtube_boss_titles.py --rollback abc123
+
+Rollback Video: abc123
+Current title: Bloodborne: Father Gascoigne Melee PS5
+Original title: Bloodborne_20250321184741
+
+Do you want to rollback this video? [y/N]: y
+✓ Successfully rolled back video abc123
+```
 
 ## Testing
 

@@ -7,6 +7,9 @@ token.json
 processed_videos.db
 test.db
 
+# Boss list cache
+boss_lists/
+
 # Logs
 logs/
 *.log

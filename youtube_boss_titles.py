@@ -29,9 +29,11 @@ from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn, TimeRemainingColumn
 from rich.table import Table
 
+from boss_scraper import BossScraper
 from config import Config
 from database import VideoDatabase, exponential_backoff
 from error_messages import ErrorCode, format_error
+from gaming_api import GamingAPI
 from logging_config import log_api_call, log_error, setup_logging
 
 __version__ = "1.1.0"
@@ -93,6 +95,10 @@ class YouTubeBossUpdater:
         self.db = VideoDatabase(db_path)
         self.max_retries = config.get("processing.retry.max_attempts", 3)
         self.logger = logger_instance or logging.getLogger("youtube_boss_updater")
+        self.gaming_api = GamingAPI(
+            cache_expiry_days=config.get("processing.cache.expiry_days", 30), logger=self.logger
+        )
+        self.boss_scraper = BossScraper(logger=self.logger)
 
     def authenticate_youtube(self) -> None:
         """
@@ -337,6 +343,8 @@ class YouTubeBossUpdater:
         """
         Check if game is a souls-like that should get 'Melee' tag.
 
+        Uses RAWG API for dynamic detection with fallback to hardcoded list.
+
         Args:
             game_name: Name of the game to check
 
@@ -349,9 +357,7 @@ class YouTubeBossUpdater:
             >>> updater.is_soulslike("Clair Obscur")
             False
         """
-        game_lower = game_name.lower()
-        soulslike_games = self.config.get("soulslike_games", SOULSLIKE_GAMES)
-        return any(souls_game in game_lower for souls_game in soulslike_games)
+        return self.gaming_api.is_soulslike_game(game_name)
 
     def get_my_videos(self) -> list[dict[str, str]]:
         """
@@ -520,21 +526,27 @@ class YouTubeBossUpdater:
 
     def get_boss_list(self, game_name: str) -> list[str]:
         """
-        Search for boss list for the game online.
+        Get comprehensive boss list for the game from wikis.
 
         Args:
             game_name: Name of the game
 
         Returns:
-            List of known boss names (currently returns empty list)
+            List of known boss names from Wikipedia and Fandom wikis
 
-        Note:
-            This is a placeholder for future enhancements with web scraping
-            or gaming API integration.
+        Example:
+            >>> updater = YouTubeBossUpdater(config)
+            >>> bosses = updater.get_boss_list("Bloodborne")
+            >>> len(bosses) > 0
+            True
         """
-        # For now, return empty list - the LLM will identify the boss from the video
-        # In a more sophisticated version, you could scrape wikis, use gaming APIs, etc.
-        return []
+        try:
+            boss_list = self.boss_scraper.get_boss_list(game_name, use_cache=True)
+            self.logger.info(f"Retrieved {len(boss_list)} bosses for {game_name}")
+            return boss_list
+        except Exception as e:
+            self.logger.error(f"Failed to get boss list for {game_name}: {e}")
+            return []
 
     def identify_boss_from_images(self, image_urls: list[str], game_name: str) -> Optional[str]:
         """
@@ -1499,6 +1511,25 @@ Examples:
         help="Number of parallel workers for video processing (default: 1 for sequential, recommend 3-5 for parallel)",
     )
 
+    parser.add_argument(
+        "--rollback",
+        type=str,
+        metavar="VIDEO_ID",
+        help="Rollback a specific video to its original title",
+    )
+
+    parser.add_argument(
+        "--rollback-all",
+        action="store_true",
+        help="Rollback all updated videos to their original titles",
+    )
+
+    parser.add_argument(
+        "--list-rollback-candidates",
+        action="store_true",
+        help="List all videos that can be rolled back and exit",
+    )
+
     args = parser.parse_args()
 
     # Setup logging
@@ -1549,6 +1580,24 @@ Examples:
         console.print(f"[green]✓[/green] Cleared {total_cleared} cache entries ({expired_cleared} were expired)")
         logger.info(f"Cache cleared: {total_cleared} total, {expired_cleared} expired")
         return 0
+
+    # Handle rollback commands
+    if args.rollback or args.rollback_all or args.list_rollback_candidates:
+        from rollback import RollbackManager
+
+        rollback_manager = RollbackManager(updater, logger)
+
+        if args.list_rollback_candidates:
+            rollback_manager.display_rollback_candidates()
+            return 0
+
+        if args.rollback:
+            success = rollback_manager.rollback_video(args.rollback, confirm=True, update_sheets=True)
+            return 0 if success else 1
+
+        if args.rollback_all:
+            success_count, failed_count = rollback_manager.rollback_all(confirm=True, update_sheets=True)
+            return 0 if failed_count == 0 else 1
 
     # Handle --list-games
     if args.list_games:

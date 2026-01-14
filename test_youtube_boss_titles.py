@@ -995,5 +995,226 @@ class TestConfigurationUpdates:
         assert config.get("processing.parallel.workers") == 3
 
 
+class TestGamingAPI:
+    """Tests for Sprint 5 - Gaming API Integration"""
+
+    def test_gaming_api_initialization(self):
+        """Test GamingAPI initializes correctly"""
+        from gaming_api import GamingAPI
+
+        api = GamingAPI(api_key=None)
+        assert api.api_key is None
+        assert api.base_url == "https://api.rawg.io/api"
+
+    def test_is_soulslike_fallback_list(self):
+        """Test souls-like detection using fallback list"""
+        from gaming_api import GamingAPI
+
+        api = GamingAPI(api_key=None)  # No API key, use fallback
+
+        assert api.is_soulslike_game("Bloodborne") is True
+        assert api.is_soulslike_game("Dark Souls") is True
+        assert api.is_soulslike_game("Elden Ring") is True
+        assert api.is_soulslike_game("Mario Kart") is False
+        assert api.is_soulslike_game("God of War") is False
+
+    def test_gaming_api_cache(self):
+        """Test GamingAPI caching functionality"""
+        from gaming_api import GamingAPI
+
+        api = GamingAPI(api_key=None)
+
+        # Cache should start empty
+        stats = api.get_cache_stats()
+        assert stats["total"] == 0
+
+        # Clear cache
+        cleared = api.clear_cache()
+        assert cleared >= 0
+
+
+class TestBossScraper:
+    """Tests for Sprint 5 - Boss List Scraping"""
+
+    def test_boss_scraper_initialization(self):
+        """Test BossScraper initializes correctly"""
+        from boss_scraper import BossScraper
+
+        scraper = BossScraper(cache_dir="test_boss_lists")
+        assert scraper.cache_dir.name == "test_boss_lists"
+        assert scraper.REQUEST_DELAY == 2.0
+
+    def test_boss_scraper_cache_path(self):
+        """Test cache path generation"""
+        from boss_scraper import BossScraper
+
+        scraper = BossScraper(cache_dir="test_boss_lists")
+        cache_path = scraper._get_cache_path("Dark Souls")
+
+        assert cache_path.name == "dark_souls.json"
+        assert "test_boss_lists" in str(cache_path)
+
+    def test_boss_scraper_cache_operations(self):
+        """Test boss scraper cache save and load"""
+        import shutil
+        import tempfile
+
+        from boss_scraper import BossScraper
+
+        # Use temporary directory for cache
+        temp_dir = tempfile.mkdtemp()
+
+        try:
+            scraper = BossScraper(cache_dir=temp_dir)
+
+            # Save some bosses to cache
+            bosses = ["Father Gascoigne", "Cleric Beast", "Vicar Amelia"]
+            scraper._save_to_cache("Bloodborne", bosses)
+
+            # Load from cache
+            loaded_bosses = scraper._load_from_cache("Bloodborne")
+            assert loaded_bosses == bosses
+
+            # Clear cache
+            count = scraper.clear_cache("Bloodborne")
+            assert count == 1
+
+            # Should not be cached anymore
+            loaded_bosses = scraper._load_from_cache("Bloodborne")
+            assert loaded_bosses is None
+
+        finally:
+            # Clean up temp directory
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_get_cached_games(self):
+        """Test listing cached games"""
+        import shutil
+        import tempfile
+
+        from boss_scraper import BossScraper
+
+        temp_dir = tempfile.mkdtemp()
+
+        try:
+            scraper = BossScraper(cache_dir=temp_dir)
+
+            # Cache some games
+            scraper._save_to_cache("Bloodborne", ["Boss1", "Boss2"])
+            scraper._save_to_cache("Elden Ring", ["Boss3", "Boss4"])
+
+            # Get cached games
+            games = scraper.get_cached_games()
+            assert len(games) >= 2
+            assert "Bloodborne" in games or "Elden Ring" in games
+
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+class TestRollbackSystem:
+    """Tests for Sprint 5 - Rollback System"""
+
+    def test_rollback_manager_initialization(self, mock_config):
+        """Test RollbackManager initializes correctly"""
+        from rollback import RollbackManager
+
+        with patch("youtube_boss_titles.openai.OpenAI"), patch("youtube_boss_titles.VideoDatabase"):
+            import logging
+
+            mock_logger = logging.getLogger("test_logger")
+            updater = YouTubeBossUpdater(config=mock_config, logger_instance=mock_logger, db_path=":memory:")
+
+            rollback = RollbackManager(updater, mock_logger)
+            assert rollback.updater == updater
+            assert rollback.logger == mock_logger
+
+    def test_list_rollback_candidates_empty(self, mock_config):
+        """Test listing rollback candidates when database is empty"""
+        from rollback import RollbackManager
+
+        with patch("youtube_boss_titles.openai.OpenAI"), patch("youtube_boss_titles.VideoDatabase"):
+            import logging
+
+            mock_logger = logging.getLogger("test_logger")
+            updater = YouTubeBossUpdater(config=mock_config, logger_instance=mock_logger, db_path=":memory:")
+
+            # Mock empty completed videos
+            updater.db.get_videos_by_status = Mock(return_value=[])
+
+            rollback = RollbackManager(updater, mock_logger)
+            candidates = rollback.list_rollback_candidates()
+
+            assert candidates == []
+
+    def test_list_rollback_candidates_with_videos(self, mock_config):
+        """Test listing rollback candidates with videos"""
+        from rollback import RollbackManager
+
+        with patch("youtube_boss_titles.openai.OpenAI"), patch("youtube_boss_titles.VideoDatabase"):
+            import logging
+
+            mock_logger = logging.getLogger("test_logger")
+            updater = YouTubeBossUpdater(config=mock_config, logger_instance=mock_logger, db_path=":memory:")
+
+            # Mock completed videos with changes
+            mock_videos = [
+                {
+                    "video_id": "v1",
+                    "original_title": "Original Title 1",
+                    "new_title": "New Title 1",
+                    "game_name": "Bloodborne",
+                },
+                {
+                    "video_id": "v2",
+                    "original_title": "Original Title 2",
+                    "new_title": "New Title 2",
+                    "game_name": "Elden Ring",
+                },
+            ]
+            updater.db.get_videos_by_status = Mock(return_value=mock_videos)
+
+            rollback = RollbackManager(updater, mock_logger)
+            candidates = rollback.list_rollback_candidates()
+
+            assert len(candidates) == 2
+            assert candidates[0]["video_id"] == "v1"
+            assert candidates[1]["video_id"] == "v2"
+
+
+class TestSprint5Integration:
+    """Integration tests for Sprint 5 features"""
+
+    def test_gaming_api_integration(self, updater):
+        """Test gaming API is integrated into updater"""
+        assert hasattr(updater, "gaming_api")
+        assert updater.gaming_api is not None
+
+    def test_boss_scraper_integration(self, updater):
+        """Test boss scraper is integrated into updater"""
+        assert hasattr(updater, "boss_scraper")
+        assert updater.boss_scraper is not None
+
+    def test_is_soulslike_uses_gaming_api(self, updater):
+        """Test is_soulslike method uses gaming API"""
+        # Test with known souls-like game
+        result = updater.is_soulslike("Bloodborne")
+        assert result is True
+
+        # Test with non-souls-like game
+        result = updater.is_soulslike("Mario Kart")
+        assert result is False
+
+    def test_get_boss_list_integration(self, updater):
+        """Test get_boss_list returns list"""
+        # Mock the boss scraper to return a known list
+        with patch.object(updater.boss_scraper, "get_boss_list", return_value=["Boss1", "Boss2", "Boss3"]):
+            boss_list = updater.get_boss_list("Bloodborne")
+
+            assert isinstance(boss_list, list)
+            assert len(boss_list) == 3
+            assert "Boss1" in boss_list
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--cov=youtube_boss_titles", "--cov-report=html"])
