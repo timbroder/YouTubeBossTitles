@@ -17,6 +17,11 @@ class VideoDatabase:
     def __init__(self, db_path: str = 'processed_videos.db'):
         """Initialize database connection"""
         self.db_path = db_path
+        # For in-memory databases, keep a persistent connection
+        self._memory_connection = None
+        if db_path == ':memory:':
+            self._memory_connection = sqlite3.connect(db_path)
+            self._memory_connection.row_factory = sqlite3.Row
         self._initialize_database()
 
     def _initialize_database(self):
@@ -81,12 +86,16 @@ class VideoDatabase:
     @contextmanager
     def get_connection(self):
         """Context manager for database connections"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row  # Enable column access by name
-        try:
-            yield conn
-        finally:
-            conn.close()
+        # Use persistent connection for in-memory databases
+        if self._memory_connection is not None:
+            yield self._memory_connection
+        else:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row  # Enable column access by name
+            try:
+                yield conn
+            finally:
+                conn.close()
 
     def add_video(self, video_id: str, original_title: str, game_name: str,
                   status: str = 'pending') -> bool:
