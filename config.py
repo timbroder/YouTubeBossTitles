@@ -6,7 +6,7 @@ Configuration handling for YouTube Boss Title Updater
 import copy
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import yaml
 
@@ -80,7 +80,7 @@ class Config:
         except Exception as e:
             raise ValueError(f"Error loading configuration file: {e}") from e
 
-    def _deep_merge(self, base: Dict, update: Dict):
+    def _deep_merge(self, base: dict, update: dict):
         """Recursively merge update dict into base dict"""
         for key, value in update.items():
             if key in base and isinstance(base[key], dict) and isinstance(value, dict):
@@ -92,7 +92,7 @@ class Config:
         """Load sensitive values from environment variables, replacing placeholders"""
         self._resolve_env_placeholders(self.config)
 
-    def _resolve_env_placeholders(self, config_dict: Dict):
+    def _resolve_env_placeholders(self, config_dict: dict):
         """Recursively resolve environment variable placeholders in config"""
         for key, value in config_dict.items():
             if isinstance(value, dict):

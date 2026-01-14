@@ -7,7 +7,7 @@ Tracks processed videos, their state, and errors
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 
 class VideoDatabase:
@@ -134,7 +134,7 @@ class VideoDatabase:
             print(f"Database error adding video {video_id}: {e}")
             return False
 
-    def get_video(self, video_id: str) -> Optional[Dict]:
+    def get_video(self, video_id: str) -> Optional[dict]:
         """Get video record by ID"""
         try:
             with self.get_connection() as conn:
@@ -197,7 +197,7 @@ class VideoDatabase:
             print(f"Database error updating video {video_id}: {e}")
             return False
 
-    def get_videos_by_status(self, status: str) -> List[Dict]:
+    def get_videos_by_status(self, status: str) -> list[dict]:
         """Get all videos with a specific status"""
         try:
             with self.get_connection() as conn:
@@ -208,7 +208,7 @@ class VideoDatabase:
             print(f"Database error getting videos by status {status}: {e}")
             return []
 
-    def get_failed_videos(self, max_attempts: int = 3) -> List[Dict]:
+    def get_failed_videos(self, max_attempts: int = 3) -> list[dict]:
         """Get videos that have failed but haven't exceeded max attempts"""
         try:
             with self.get_connection() as conn:
@@ -226,7 +226,7 @@ class VideoDatabase:
             print(f"Database error getting failed videos: {e}")
             return []
 
-    def get_pending_videos(self) -> List[Dict]:
+    def get_pending_videos(self) -> list[dict]:
         """Get all pending videos"""
         return self.get_videos_by_status("pending")
 
@@ -235,7 +235,7 @@ class VideoDatabase:
         video = self.get_video(video_id)
         return video is not None and video["status"] == "completed"
 
-    def get_statistics(self) -> Dict[str, int]:
+    def get_statistics(self) -> dict[str, int]:
         """Get processing statistics"""
         try:
             with self.get_connection() as conn:
@@ -283,7 +283,7 @@ class VideoDatabase:
         except sqlite3.Error as e:
             print(f"Database error clearing processing status: {e}")
 
-    def get_games_summary(self) -> List[Tuple[str, int, int]]:
+    def get_games_summary(self) -> list[tuple[str, int, int]]:
         """Get summary of games with completed and total counts"""
         try:
             with self.get_connection() as conn:
@@ -325,7 +325,7 @@ class VideoDatabase:
         key = f"{video_id}:{game_name}"
         return hashlib.sha256(key.encode()).hexdigest()
 
-    def get_cached_boss(self, video_id: str, game_name: str) -> Optional[Dict]:
+    def get_cached_boss(self, video_id: str, game_name: str) -> Optional[dict]:
         """Get cached boss identification result"""
         try:
             with self.get_connection() as conn:
@@ -390,7 +390,7 @@ class VideoDatabase:
             print(f"Database error caching boss for {video_id}: {e}")
             return False
 
-    def clear_cache(self) -> Tuple[int, int]:
+    def clear_cache(self) -> tuple[int, int]:
         """
         Clear all cache entries
         Returns: (total_cleared, expired_cleared)
@@ -441,7 +441,7 @@ class VideoDatabase:
             print(f"Database error cleaning up expired cache: {e}")
             return 0
 
-    def get_cache_statistics(self) -> Dict[str, int]:
+    def get_cache_statistics(self) -> dict[str, int]:
         """Get cache statistics"""
         try:
             with self.get_connection() as conn:

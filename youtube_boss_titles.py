@@ -14,7 +14,7 @@ import tempfile
 import time
 from collections import defaultdict
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Optional
 
 import gspread
 import openai
@@ -353,7 +353,7 @@ class YouTubeBossUpdater:
         soulslike_games = self.config.get("soulslike_games", SOULSLIKE_GAMES)
         return any(souls_game in game_lower for souls_game in soulslike_games)
 
-    def get_my_videos(self) -> List[Dict[str, str]]:
+    def get_my_videos(self) -> list[dict[str, str]]:
         """
         Fetch all videos from user's channel.
 
@@ -416,7 +416,7 @@ class YouTubeBossUpdater:
         """
         return f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
 
-    def extract_video_frames(self, video_id: str, timestamps: Optional[List[int]] = None) -> List[str]:
+    def extract_video_frames(self, video_id: str, timestamps: Optional[list[int]] = None) -> list[str]:
         """
         Extract frames from video at specific timestamps using yt-dlp.
 
@@ -518,7 +518,7 @@ class YouTubeBossUpdater:
 
         return frames
 
-    def get_boss_list(self, game_name: str) -> List[str]:
+    def get_boss_list(self, game_name: str) -> list[str]:
         """
         Search for boss list for the game online.
 
@@ -536,7 +536,7 @@ class YouTubeBossUpdater:
         # In a more sophisticated version, you could scrape wikis, use gaming APIs, etc.
         return []
 
-    def identify_boss_from_images(self, image_urls: List[str], game_name: str) -> Optional[str]:
+    def identify_boss_from_images(self, image_urls: list[str], game_name: str) -> Optional[str]:
         """
         Use OpenAI Vision to identify boss from one or more images.
 
@@ -856,7 +856,7 @@ Boss name:""",
             print(f"  ✗ Error adding to playlist: {e}")
             return False
 
-    def process_video(self, video: Dict[str, str], force: bool = False) -> bool:
+    def process_video(self, video: dict[str, str], force: bool = False) -> bool:
         """
         Process a single video with database tracking and error handling.
 
@@ -1163,7 +1163,7 @@ Boss name:""",
 
         self._process_video_list(ps5_videos, dry_run, force, workers)
 
-    def _estimate_cost(self, num_videos: int) -> Dict[str, float]:
+    def _estimate_cost(self, num_videos: int) -> dict[str, float]:
         """
         Estimate processing costs.
 
@@ -1214,7 +1214,7 @@ Boss name:""",
         console.print()
 
     def _process_video_list(
-        self, videos: List[Dict[str, str]], dry_run: bool, force: bool, workers: Optional[int] = None
+        self, videos: list[dict[str, str]], dry_run: bool, force: bool, workers: Optional[int] = None
     ) -> None:
         """
         Process a list of videos with rich progress bar and optional parallel processing.
@@ -1353,7 +1353,7 @@ Boss name:""",
             console.print(table2)
             console.print()
 
-    def _process_video_list_parallel(self, videos: List[Dict[str, str]], force: bool, workers: int) -> None:
+    def _process_video_list_parallel(self, videos: list[dict[str, str]], force: bool, workers: int) -> None:
         """
         Process videos in parallel using ThreadPoolExecutor.
 
@@ -1369,7 +1369,7 @@ Boss name:""",
         lock = threading.Lock()
         results = {"processed": 0, "failed": 0, "skipped": 0}
 
-        def process_video_wrapper(video: Dict) -> Dict:
+        def process_video_wrapper(video: dict) -> dict:
             """Wrapper to process video and return result"""
             try:
                 result = self.process_video(video, force=force)

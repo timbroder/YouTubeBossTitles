@@ -2,7 +2,7 @@
 Error messages with codes and helpful troubleshooting hints
 """
 
-from typing import Dict, Optional
+from typing import Optional
 
 
 class ErrorCode:
@@ -25,7 +25,7 @@ class ErrorCode:
     PROCESSING_ERROR = "E015"
 
 
-ERROR_MESSAGES: Dict[str, Dict[str, str]] = {
+ERROR_MESSAGES: dict[str, dict[str, str]] = {
     ErrorCode.AUTH_FAILED: {
         "message": "Authentication failed",
         "hint": "Make sure client_secret.json exists and is valid. Try deleting token.json to re-authenticate.",
