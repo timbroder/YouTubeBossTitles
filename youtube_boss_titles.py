@@ -46,7 +46,11 @@ logger = None
 
 
 # API scopes
-SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl", "https://www.googleapis.com/auth/spreadsheets"]
+SCOPES = [
+    "https://www.googleapis.com/auth/youtube.force-ssl",
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive.file",
+]
 
 # Souls-like games that should get "Melee" in the title
 SOULSLIKE_GAMES = [
