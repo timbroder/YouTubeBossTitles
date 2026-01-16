@@ -10,6 +10,13 @@ openai:
   model: "gpt-4o"
   max_tokens: 100
 
+# RAWG Gaming API Configuration (Optional)
+# Get your free API key at https://rawg.io/apidocs
+rawg:
+  api_key: "${RAWG_API_KEY}"
+  # Or set directly
+  # api_key: "your-rawg-api-key"
+
 # YouTube Configuration
 youtube:
   log_spreadsheet_name: "YouTube Boss Title Updates"
@@ -26,6 +33,16 @@ processing:
   retry:
     max_attempts: 3
     exponential_backoff: true
+
+  # Caching settings
+  cache:
+    enabled: true
+    expiry_days: 30  # cache entries expire after 30 days
+
+  # Parallel processing settings
+  parallel:
+    enabled: false  # enable parallel processing
+    workers: 3  # number of concurrent workers
 
 # List of souls-like games that should get "Melee" tag
 soulslike_games:
