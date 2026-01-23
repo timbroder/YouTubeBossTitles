@@ -627,10 +627,7 @@ class YouTubeBossUpdater:
             return False
 
         # Reject names that are just "mode" or end with "mode" without context
-        if boss_lower == "mode" or boss_lower.endswith(" mode"):
-            return False
-
-        return True
+        return not (boss_lower == "mode" or boss_lower.endswith(" mode"))
 
     def identify_boss_from_images(self, image_urls: list[str], game_name: str) -> Optional[str]:
         """
