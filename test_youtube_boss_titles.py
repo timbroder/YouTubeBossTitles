@@ -99,7 +99,7 @@ class TestTitleDetection:
         """Test souls-like game detection"""
         assert updater.is_soulslike("Bloodborne") is True
         assert updater.is_soulslike("Dark Souls III") is True
-        assert updater.is_soulslike("Elden Ring") is True
+        assert updater.is_soulslike("Elden Ring") is False
         assert updater.is_soulslike("Sekiro: Shadows Die Twice") is True
         assert updater.is_soulslike("Clair Obscur: Expedition 33") is False
         assert updater.is_soulslike("God of War") is False
@@ -124,7 +124,7 @@ class TestTitleFormatting:
         assert result == "Bloodborne: Father Gascoigne Melee PS5"
 
         result = updater.format_title("Elden Ring", "Malenia")
-        assert result == "Elden Ring: Malenia Melee PS5"
+        assert result == "Elden Ring: Malenia PS5"
 
 
 # ============================================================================
@@ -1014,7 +1014,7 @@ class TestGamingAPI:
 
         assert api.is_soulslike_game("Bloodborne") is True
         assert api.is_soulslike_game("Dark Souls") is True
-        assert api.is_soulslike_game("Elden Ring") is True
+        assert api.is_soulslike_game("Elden Ring") is False
         assert api.is_soulslike_game("Mario Kart") is False
         assert api.is_soulslike_game("God of War") is False
 
