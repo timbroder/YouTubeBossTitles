@@ -26,7 +26,6 @@ class GamingAPI:
         "dark souls",
         "demon's souls",
         "demons souls",
-        "elden ring",
         "sekiro",
         "lords of the fallen",
         "lies of p",
