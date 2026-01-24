@@ -29,7 +29,8 @@ class VideoDatabase:
             cursor = conn.cursor()
 
             # Create processed_videos table
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS processed_videos (
                     video_id TEXT PRIMARY KEY,
                     original_title TEXT,
@@ -43,20 +44,26 @@ class VideoDatabase:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+            """
+            )
 
             # Create index on status for faster queries
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_status ON processed_videos(status)
-            """)
+            """
+            )
 
             # Create index on game_name for filtering
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_game_name ON processed_videos(game_name)
-            """)
+            """
+            )
 
             # Create cache table for OpenAI responses
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS boss_cache (
                     cache_key TEXT PRIMARY KEY,
                     video_id TEXT,
@@ -68,17 +75,22 @@ class VideoDatabase:
                     accessed_count INTEGER DEFAULT 0,
                     last_accessed TIMESTAMP
                 )
-            """)
+            """
+            )
 
             # Create index on video_id for cache lookup
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_cache_video_id ON boss_cache(video_id)
-            """)
+            """
+            )
 
             # Create index on expires_at for cleanup
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_cache_expires ON boss_cache(expires_at)
-            """)
+            """
+            )
 
             conn.commit()
 
@@ -228,13 +240,15 @@ class VideoDatabase:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT
                         status,
                         COUNT(*) as count
                     FROM processed_videos
                     GROUP BY status
-                """)
+                """
+                )
                 stats = {row["status"]: row["count"] for row in cursor.fetchall()}
 
                 # Get total count
@@ -274,7 +288,8 @@ class VideoDatabase:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT
                         game_name,
                         COUNT(*) as total,
@@ -282,7 +297,8 @@ class VideoDatabase:
                     FROM processed_videos
                     GROUP BY game_name
                     ORDER BY total DESC
-                """)
+                """
+                )
                 return [(row["game_name"], row["total"], row["completed"]) for row in cursor.fetchall()]
         except sqlite3.Error as e:
             print(f"Database error getting games summary: {e}")
@@ -449,9 +465,11 @@ class VideoDatabase:
                 active = total - expired
 
                 # Most accessed
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT MAX(accessed_count) as max_accessed FROM boss_cache
-                """)
+                """
+                )
                 max_accessed = cursor.fetchone()["max_accessed"] or 0
 
                 return {"total": total, "active": active, "expired": expired, "max_accessed": max_accessed}
