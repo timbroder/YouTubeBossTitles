@@ -551,6 +551,87 @@ class YouTubeBossUpdater:
             self.logger.error(f"Failed to get boss list for {game_name}: {e}")
             return []
 
+    def is_valid_boss_name(self, boss_name: str) -> bool:
+        """
+        Validate if the returned string is a legitimate boss name.
+
+        Rejects generic responses, unclear identifications, and invalid names.
+
+        Args:
+            boss_name: The boss name to validate
+
+        Returns:
+            True if valid boss name, False otherwise
+
+        Example:
+            >>> updater.is_valid_boss_name("Father Gascoigne")
+            True
+            >>> updater.is_valid_boss_name("Unknown Boss")
+            False
+            >>> updater.is_valid_boss_name("Solo mode")
+            False
+        """
+        if not boss_name or not boss_name.strip():
+            return False
+
+        boss_lower = boss_name.lower().strip()
+
+        # Reject explicit "unknown" or "cannot identify" responses
+        invalid_phrases = [
+            "unknown",
+            "cannot identify",
+            "can't identify",
+            "not sure",
+            "unclear",
+            "no boss",
+            "not visible",
+            "unable to identify",
+            "cannot determine",
+            "can't determine",
+            "not enough information",
+            "insufficient information",
+            "n/a",
+            "none",
+            "no match",
+            "no name",
+            "generic boss",
+            "unidentified",
+        ]
+
+        for phrase in invalid_phrases:
+            if phrase in boss_lower:
+                return False
+
+        # Reject very short names (likely not actual boss names)
+        if len(boss_name.strip()) < 3:
+            return False
+
+        # Reject generic single words that aren't boss names
+        single_word_invalid = [
+            "solo",
+            "malay",
+            "boss",
+            "enemy",
+            "monster",
+            "creature",
+            "fight",
+            "battle",
+            "combat",
+            "mode",
+            "level",
+            "stage",
+            "area",
+            "gameplay",
+            "video",
+        ]
+
+        # Check if it's a single word from the invalid list
+        if len(boss_name.split()) == 1 and boss_lower in single_word_invalid:
+            return False
+
+        # Reject names that are just "mode" or end with "mode" without context
+        return not (boss_lower == "mode" or boss_lower.endswith(" mode"))
+
     def identify_boss_from_images(self, image_urls: list[str], game_name: str) -> Optional[str]:
         """
         Use OpenAI Vision to identify boss from one or more images.
@@ -605,9 +686,11 @@ Boss name:""",
 
             boss_name = response.choices[0].message.content.strip()
 
-            if boss_name and boss_name != "Unknown Boss":
+            # Validate that this is a legitimate boss name
+            if self.is_valid_boss_name(boss_name):
                 return boss_name
             else:
+                print(f"  ⊘ Rejected invalid boss name: '{boss_name}'")
                 return None
 
         except Exception as e:
