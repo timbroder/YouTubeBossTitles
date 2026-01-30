@@ -69,6 +69,14 @@ SOULSLIKE_GAMES = [
     "remnant",
 ]
 
+# Game name aliases - maps variant names to canonical names
+# Keys are lowercase for case-insensitive matching
+GAME_NAME_ALIASES = {
+    "dark souls": "DARK SOULS: REMASTERED",
+    "dark souls ii": "DARK SOULS II: Scholar of the First Sin",
+    "dark souls 2": "DARK SOULS II: Scholar of the First Sin",
+}
+
 
 class YouTubeBossUpdater:
     def __init__(
@@ -326,21 +334,30 @@ class YouTubeBossUpdater:
 
     def extract_game_name(self, title: str) -> str:
         """
-        Extract game name from PS5 default title.
+        Extract game name from PS5 default title and normalize aliases.
 
         Args:
             title: PS5 title with timestamp
 
         Returns:
-            Game name without timestamp
+            Game name without timestamp, normalized to canonical name if aliased
 
         Example:
             >>> updater.extract_game_name("Bloodborne_20250101120000")
             'Bloodborne'
+            >>> updater.extract_game_name("DARK SOULS_20250101120000")
+            'DARK SOULS: REMASTERED'
         """
         # Remove timestamp pattern
         game_name = re.sub(r"_\d{14}$", "", title)
-        return game_name.strip()
+        game_name = game_name.strip()
+
+        # Check for aliases (case-insensitive)
+        game_name_lower = game_name.lower()
+        if game_name_lower in GAME_NAME_ALIASES:
+            return GAME_NAME_ALIASES[game_name_lower]
+
+        return game_name
 
     def is_soulslike(self, game_name: str) -> bool:
         """
@@ -937,6 +954,11 @@ Boss name:""",
                     error_message=error_msg,
                     attempts=1,
                 )
+                # Still add to playlist even if boss identification failed
+                playlist_id = self.get_or_create_playlist(game_name)
+                if playlist_id:
+                    self.add_video_to_playlist(video_id, playlist_id)
+                    print(f"  ✓ Added to playlist: {game_name}")
                 return False
 
             # Format new title
@@ -957,6 +979,11 @@ Boss name:""",
                     error_message=error_msg,
                     attempts=1,
                 )
+                # Still add to playlist even if title update failed
+                playlist_id = self.get_or_create_playlist(game_name)
+                if playlist_id:
+                    self.add_video_to_playlist(video_id, playlist_id)
+                    print(f"  ✓ Added to playlist: {game_name}")
                 return False
 
             # Get or create playlist
@@ -1046,12 +1073,50 @@ Boss name:""",
             souls_tag = " [SOULS-LIKE]" if self.is_soulslike(game_name) else ""
             print(f"  {game_name}: {count} video(s){souls_tag}")
 
+    def list_failed(self) -> None:
+        """
+        List all failed videos from the database.
+
+        Example:
+            >>> updater.list_failed()
+            Failed Videos (3):
+            ──────────────────────────────────────────────────
+            1. Bloodborne_20250101120000 (abc123)
+               Error: Could not identify boss from video
+               Attempts: 2
+        """
+        failed_videos = self.db.get_failed_videos(max_attempts=100)  # Get all failed
+
+        if not failed_videos:
+            console.print("[green]No failed videos found![/green]")
+            return
+
+        console.print(f"\n[bold red]Failed Videos ({len(failed_videos)}):[/bold red]")
+        console.print("[dim]" + "─" * 50 + "[/dim]")
+
+        for i, video in enumerate(failed_videos, 1):
+            video_id = video.get("video_id", "unknown")
+            title = video.get("original_title", "Unknown title")
+            error = video.get("error_message", "No error message")
+            attempts = video.get("attempts", 0)
+            game = video.get("game_name", "Unknown game")
+
+            console.print(f"\n[bold]{i}. {title}[/bold]")
+            console.print(f"   [dim]Video ID:[/dim] [cyan]{video_id}[/cyan]")
+            console.print(f"   [dim]Game:[/dim] {game}")
+            console.print(f"   [dim]Error:[/dim] [red]{error}[/red]")
+            console.print(f"   [dim]Attempts:[/dim] {attempts}")
+            console.print(f"   [dim]URL:[/dim] https://www.youtube.com/watch?v={video_id}")
+
+        console.print("\n[dim]Tip: Use --resume to retry failed videos, or --force --video-id <id> [<id> ...] to reprocess specific ones[/dim]")
+
     def run(
         self,
         dry_run: bool = False,
-        video_id: Optional[str] = None,
+        video_ids: Optional[list[str]] = None,
         game: Optional[str] = None,
         limit: Optional[int] = None,
+        offset: int = 0,
         force: bool = False,
         resume: bool = False,
         workers: Optional[int] = None,
@@ -1061,9 +1126,10 @@ Boss name:""",
 
         Args:
             dry_run: If True, preview changes without making them
-            video_id: Process only this specific video ID
+            video_ids: Process only these specific video IDs
             game: Filter videos by game name
             limit: Process only N videos (after filtering)
+            offset: Skip the first N videos (for paging)
             force: Reprocess already-processed videos
             resume: Resume processing pending and failed videos
             workers: Number of parallel workers (None for sequential)
@@ -1150,13 +1216,14 @@ Boss name:""",
         videos = self.get_my_videos()
         console.print(f"[cyan]Found {len(videos)} total videos[/cyan]")
 
-        # Filter for specific video ID if provided
-        if video_id:
-            videos = [v for v in videos if v["id"] == video_id]
+        # Filter for specific video IDs if provided
+        if video_ids:
+            id_set = set(video_ids)
+            videos = [v for v in videos if v["id"] in id_set]
             if not videos:
-                console.print(f"\n[red]Error: Video ID {video_id} not found![/red]")
+                console.print(f"\n[red]Error: None of the specified video IDs were found![/red]")
                 return
-            console.print(f"[cyan]Processing specific video: {video_id}[/cyan]")
+            console.print(f"[cyan]Processing {len(videos)} specified video(s)[/cyan]")
 
         # Filter for default PS5 titles
         ps5_videos = [v for v in videos if self.is_default_ps5_title(v["title"])]
@@ -1166,6 +1233,11 @@ Boss name:""",
         if game:
             ps5_videos = [v for v in ps5_videos if game.lower() in self.extract_game_name(v["title"]).lower()]
             console.print(f"[cyan]Filtered to {len(ps5_videos)} videos matching game '{game}'[/cyan]")
+
+        # Apply offset if provided
+        if offset > 0:
+            ps5_videos = ps5_videos[offset:]
+            console.print(f"[cyan]Skipping first {offset} videos[/cyan]")
 
         # Apply limit if provided
         if limit and limit > 0:
@@ -1286,12 +1358,25 @@ Boss name:""",
                 progress.update(task, description=f"[cyan]Processing: {video_title}")
 
                 if dry_run:
+                    console.print(f"\n[dim]{'─' * 60}[/dim]")
                     console.print(
-                        f"\n[dim][{i}/{len(videos)}][/dim] [yellow][DRY RUN][/yellow] Would process: {video['title']}"
+                        f"[dim][{i}/{len(videos)}][/dim] [yellow][DRY RUN][/yellow] Processing: [cyan]{video['id']}[/cyan]"
                     )
                     game_name = self.extract_game_name(video["title"])
-                    console.print(f"  Game: {game_name}")
-                    console.print(f"  Souls-like: {self.is_soulslike(game_name)}")
+                    console.print(f"  [dim]Game:[/dim] {game_name}")
+                    console.print(f"  [dim]Souls-like:[/dim] {self.is_soulslike(game_name)}")
+
+                    # Identify boss to show what the new title would be
+                    boss_name = self.identify_boss(video["id"], game_name)
+                    if boss_name:
+                        new_title = self.format_title(game_name, boss_name)
+                        console.print(f"\n  [dim]Original title:[/dim] {video['title']}")
+                        console.print(f"  [bold green]New title:      {new_title}[/bold green]")
+                        processed += 1
+                    else:
+                        console.print(f"\n  [dim]Original title:[/dim] {video['title']}")
+                        console.print(f"  [red]Could not identify boss - would skip[/red]")
+                        skipped += 1
                 else:
                     result = self.process_video(video, force=force)
                     if result:
@@ -1331,8 +1416,9 @@ Boss name:""",
         console.print()
 
         if dry_run:
+            summary_text = f"[green]✓ Would update: {processed}[/green]  |  [yellow]⊘ Would skip: {skipped}[/yellow]"
             console.print(
-                Panel(f"[yellow]Would process {total} videos[/yellow]", title="Dry Run Summary", border_style="yellow")
+                Panel(summary_text, title="Dry Run Summary", border_style="yellow")
             )
         else:
             # Create summary table
@@ -1469,9 +1555,11 @@ def main() -> int:
 Examples:
   %(prog)s --dry-run                      # Preview changes without applying
   %(prog)s --video-id abc123 --force      # Process specific video
+  %(prog)s --video-id id1 id2 id3 --force # Process multiple specific videos
   %(prog)s --game "Bloodborne" --limit 5  # Process 5 Bloodborne videos
   %(prog)s --list-games                   # Show all detected games
   %(prog)s --config prod.yml              # Use custom config file
+  %(prog)s --offset 20 --limit 20         # Process videos 20-39
         """,
     )
 
@@ -1483,7 +1571,9 @@ Examples:
         "--config", type=str, metavar="PATH", help="Path to custom configuration file (default: use built-in config)"
     )
 
-    parser.add_argument("--video-id", type=str, metavar="ID", help="Process only this specific video ID")
+    parser.add_argument(
+        "--video-id", type=str, nargs="+", metavar="ID", help="Process one or more specific video IDs"
+    )
 
     parser.add_argument(
         "--game", type=str, metavar="NAME", help="Filter videos by game name (case-insensitive partial match)"
@@ -1491,9 +1581,15 @@ Examples:
 
     parser.add_argument("--limit", type=int, metavar="N", help="Process only N videos (after filtering)")
 
+    parser.add_argument(
+        "--offset", type=int, default=0, metavar="N", help="Skip the first N videos (use with --limit for paging)"
+    )
+
     parser.add_argument("--force", action="store_true", help="Reprocess videos that have already been processed")
 
     parser.add_argument("--list-games", action="store_true", help="List all detected games with video counts and exit")
+
+    parser.add_argument("--list-failed", action="store_true", help="List all failed videos from database and exit")
 
     parser.add_argument(
         "--resume", action="store_true", help="Resume processing pending and failed videos from database"
@@ -1607,13 +1703,19 @@ Examples:
         updater.list_games()
         return 0
 
+    # Handle --list-failed
+    if args.list_failed:
+        updater.list_failed()
+        return 0
+
     # Run the updater with specified options
     try:
         updater.run(
             dry_run=args.dry_run,
-            video_id=args.video_id,
+            video_ids=args.video_id,
             game=args.game,
             limit=args.limit,
+            offset=args.offset,
             force=args.force,
             resume=args.resume,
             workers=args.workers,

@@ -140,17 +140,26 @@ The tool supports various command line options for flexible operation:
 # Dry run mode (preview without changes)
 python youtube_boss_titles.py --dry-run
 
-# Process specific video
+# Process a specific video
 python youtube_boss_titles.py --video-id abc123
+
+# Process multiple specific videos
+python youtube_boss_titles.py --video-id abc123 def456 ghi789
 
 # Filter by game name
 python youtube_boss_titles.py --game "Bloodborne" --limit 5
+
+# Page through videos in batches
+python youtube_boss_titles.py --offset 20 --limit 20
 
 # Force reprocess already processed videos
 python youtube_boss_titles.py --force
 
 # Resume processing from database
 python youtube_boss_titles.py --resume
+
+# List failed videos
+python youtube_boss_titles.py --list-failed
 
 # Use parallel processing (3-5 workers recommended)
 python youtube_boss_titles.py --workers 3
@@ -164,9 +173,12 @@ python youtube_boss_titles.py --list-games
 # Use custom config file
 python youtube_boss_titles.py --config prod.yml
 
+# Show version
+python youtube_boss_titles.py --version
+
 # Verbose/quiet mode
-python youtube_boss_titles.py --verbose
-python youtube_boss_titles.py --quiet
+python youtube_boss_titles.py -v
+python youtube_boss_titles.py -q
 ```
 
 ### First Run (Dry Run)
@@ -226,12 +238,15 @@ Souls-like games include:
 - Bloodborne
 - Dark Souls series
 - Demon's Souls
-- Elden Ring
 - Sekiro
 - Lords of the Fallen
 - Lies of P
 - Nioh series
-- And more...
+- Mortal Shell
+- Salt and Sanctuary
+- Hollow Knight
+- The Surge
+- Remnant
 
 ## Configuration
 
@@ -480,7 +495,7 @@ python youtube_boss_titles.py --list-rollback-candidates
 
 **Features:**
 - Restores original titles from database
-- Confirmation prompts before rollback (can be skipped with `--yes`)
+- Confirmation prompts before rollback
 - Logs rollbacks to Google Sheets with "ROLLBACK" status
 - Displays before/after comparison
 - Batch rollback with summary statistics
@@ -590,10 +605,7 @@ test_youtube_boss_titles.py
 ## Future Enhancements
 
 Potential improvements:
-- Scrape boss lists from gaming wikis for better AI context
 - Add support for custom game-to-playlist mappings
-- Batch processing with progress bars
-- Backup original titles before updating
 - Support for custom title templates
 - Configurable frame extraction timestamps per game
 - Support for analyzing longer videos (currently limited to first 90 seconds)
