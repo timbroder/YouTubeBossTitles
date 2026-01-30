@@ -1225,7 +1225,7 @@ Boss name:""",
             id_set = set(video_ids)
             videos = [v for v in videos if v["id"] in id_set]
             if not videos:
-                console.print(f"\n[red]Error: None of the specified video IDs were found![/red]")
+                console.print("\n[red]Error: None of the specified video IDs were found![/red]")
                 return
             console.print(f"[cyan]Processing {len(videos)} specified video(s)[/cyan]")
 
@@ -1391,7 +1391,7 @@ Boss name:""",
                         processed += 1
                     else:
                         console.print(f"\n  [dim]Original title:[/dim] {video['title']}")
-                        console.print(f"  [red]Could not identify boss - would skip[/red]")
+                        console.print("  [red]Could not identify boss - would skip[/red]")
                         skipped += 1
                 else:
                     result = self.process_video(video, force=force)
