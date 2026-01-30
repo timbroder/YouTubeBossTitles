@@ -920,7 +920,9 @@ Boss name:""",
                 return False
 
             if db_record and db_record["status"] in ("completed", "failed"):
-                print(f"  ⊘ Already {db_record['status']} (in database), skipping (use --force to reprocess, --resume to retry failed)")
+                print(
+                    f"  ⊘ Already {db_record['status']} (in database), skipping (use --force to reprocess, --resume to retry failed)"
+                )
                 return False
 
         # Check if it's a default PS5 title
@@ -1108,7 +1110,9 @@ Boss name:""",
             console.print(f"   [dim]Attempts:[/dim] {attempts}")
             console.print(f"   [dim]URL:[/dim] https://www.youtube.com/watch?v={video_id}")
 
-        console.print("\n[dim]Tip: Use --resume to retry failed videos, or --force --video-id <id> [<id> ...] to reprocess specific ones[/dim]")
+        console.print(
+            "\n[dim]Tip: Use --resume to retry failed videos, or --force --video-id <id> [<id> ...] to reprocess specific ones[/dim]"
+        )
 
     def run(
         self,
@@ -1242,7 +1246,9 @@ Boss name:""",
             ps5_videos = [v for v in ps5_videos if v["id"] not in skip_ids]
             skipped = before_count - len(ps5_videos)
             if skipped > 0:
-                console.print(f"[cyan]Skipped {skipped} already-processed/failed videos (use --force to reprocess, --resume to retry failed)[/cyan]")
+                console.print(
+                    f"[cyan]Skipped {skipped} already-processed/failed videos (use --force to reprocess, --resume to retry failed)[/cyan]"
+                )
 
         # Apply offset if provided
         if offset > 0:
@@ -1427,9 +1433,7 @@ Boss name:""",
 
         if dry_run:
             summary_text = f"[green]✓ Would update: {processed}[/green]  |  [yellow]⊘ Would skip: {skipped}[/yellow]"
-            console.print(
-                Panel(summary_text, title="Dry Run Summary", border_style="yellow")
-            )
+            console.print(Panel(summary_text, title="Dry Run Summary", border_style="yellow"))
         else:
             # Create summary table
             table = Table(title="📊 Processing Summary", box=box.ROUNDED)
@@ -1581,9 +1585,7 @@ Examples:
         "--config", type=str, metavar="PATH", help="Path to custom configuration file (default: use built-in config)"
     )
 
-    parser.add_argument(
-        "--video-id", type=str, nargs="+", metavar="ID", help="Process one or more specific video IDs"
-    )
+    parser.add_argument("--video-id", type=str, nargs="+", metavar="ID", help="Process one or more specific video IDs")
 
     parser.add_argument(
         "--game", type=str, metavar="NAME", help="Filter videos by game name (case-insensitive partial match)"
