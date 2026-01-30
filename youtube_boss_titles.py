@@ -919,8 +919,8 @@ Boss name:""",
                 print("  ⊘ Already processed (in sheets), skipping (use --force to reprocess)")
                 return False
 
-            if db_record and db_record["status"] == "completed":
-                print("  ⊘ Already processed (in database), skipping (use --force to reprocess)")
+            if db_record and db_record["status"] in ("completed", "failed"):
+                print(f"  ⊘ Already {db_record['status']} (in database), skipping (use --force to reprocess, --resume to retry failed)")
                 return False
 
         # Check if it's a default PS5 title
@@ -1233,6 +1233,16 @@ Boss name:""",
         if game:
             ps5_videos = [v for v in ps5_videos if game.lower() in self.extract_game_name(v["title"]).lower()]
             console.print(f"[cyan]Filtered to {len(ps5_videos)} videos matching game '{game}'[/cyan]")
+
+        # Filter out already-processed and failed videos (unless --force)
+        if not force:
+            before_count = len(ps5_videos)
+            skip_ids = {v["video_id"] for v in self.db.get_videos_by_status("completed")}
+            skip_ids.update(v["video_id"] for v in self.db.get_videos_by_status("failed"))
+            ps5_videos = [v for v in ps5_videos if v["id"] not in skip_ids]
+            skipped = before_count - len(ps5_videos)
+            if skipped > 0:
+                console.print(f"[cyan]Skipped {skipped} already-processed/failed videos (use --force to reprocess, --resume to retry failed)[/cyan]")
 
         # Apply offset if provided
         if offset > 0:
