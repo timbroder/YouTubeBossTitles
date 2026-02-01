@@ -562,10 +562,8 @@ class TestIntegration:
 
         assert result is False
 
-    def test_is_valid_boss_name_accepts_valid_names(self, mock_db, mock_openai_class, mock_config):
+    def test_is_valid_boss_name_accepts_valid_names(self, updater):
         """Test that valid boss names are accepted"""
-        updater = YouTubeBossUpdater(config=mock_config, db_path=":memory:")
-
         # Valid boss names should be accepted
         assert updater.is_valid_boss_name("Father Gascoigne") is True
         assert updater.is_valid_boss_name("Cleric Beast") is True
@@ -573,10 +571,8 @@ class TestIntegration:
         assert updater.is_valid_boss_name("The Nameless King") is True
         assert updater.is_valid_boss_name("Sister Friede") is True
 
-    def test_is_valid_boss_name_rejects_unknown_responses(self, mock_db, mock_openai_class, mock_config):
+    def test_is_valid_boss_name_rejects_unknown_responses(self, updater):
         """Test that 'unknown' responses are rejected"""
-        updater = YouTubeBossUpdater(config=mock_config, db_path=":memory:")
-
         # Various forms of "unknown" should be rejected
         assert updater.is_valid_boss_name("Unknown Boss") is False
         assert updater.is_valid_boss_name("Unknown") is False
@@ -591,10 +587,8 @@ class TestIntegration:
         assert updater.is_valid_boss_name("N/A") is False
         assert updater.is_valid_boss_name("None") is False
 
-    def test_is_valid_boss_name_rejects_generic_single_words(self, mock_db, mock_openai_class, mock_config):
+    def test_is_valid_boss_name_rejects_generic_single_words(self, updater):
         """Test that generic single words are rejected"""
-        updater = YouTubeBossUpdater(config=mock_config, db_path=":memory:")
-
         # Generic single words that aren't boss names
         assert updater.is_valid_boss_name("Solo") is False
         assert updater.is_valid_boss_name("Malay") is False
@@ -606,28 +600,24 @@ class TestIntegration:
         assert updater.is_valid_boss_name("Stage") is False
         assert updater.is_valid_boss_name("Gameplay") is False
 
-    def test_is_valid_boss_name_rejects_mode_phrases(self, mock_db, mock_openai_class, mock_config):
+    def test_is_valid_boss_name_rejects_mode_phrases(self, updater):
         """Test that phrases ending in 'mode' are rejected"""
-        updater = YouTubeBossUpdater(config=mock_config, db_path=":memory:")
 
         assert updater.is_valid_boss_name("Solo mode") is False
         assert updater.is_valid_boss_name("Challenge mode") is False
         assert updater.is_valid_boss_name("Easy mode") is False
         assert updater.is_valid_boss_name("mode") is False
 
-    def test_is_valid_boss_name_rejects_empty_and_short(self, mock_db, mock_openai_class, mock_config):
+    def test_is_valid_boss_name_rejects_empty_and_short(self, updater):
         """Test that empty strings and very short names are rejected"""
-        updater = YouTubeBossUpdater(config=mock_config, db_path=":memory:")
 
         assert updater.is_valid_boss_name("") is False
         assert updater.is_valid_boss_name("   ") is False
         assert updater.is_valid_boss_name("AB") is False
         assert updater.is_valid_boss_name("X") is False
 
-    def test_identify_boss_from_images_rejects_invalid_names(self, mock_db, mock_openai_class, mock_config):
+    def test_identify_boss_from_images_rejects_invalid_names(self, updater):
         """Test that identify_boss_from_images uses validation"""
-        updater = YouTubeBossUpdater(config=mock_config, db_path=":memory:")
-
         # Mock OpenAI to return invalid boss names
         mock_openai_instance = Mock()
         updater.openai_client = mock_openai_instance
