@@ -1574,6 +1574,7 @@ Examples:
   %(prog)s --list-games                   # Show all detected games
   %(prog)s --config prod.yml              # Use custom config file
   %(prog)s --offset 20 --limit 20         # Process videos 20-39
+  %(prog)s --lookup-bosses "Bloodborne"   # List known bosses for a game
         """,
     )
 
@@ -1641,6 +1642,13 @@ Examples:
         help="List all videos that can be rolled back and exit",
     )
 
+    parser.add_argument(
+        "--lookup-bosses",
+        type=str,
+        metavar="GAME",
+        help="Look up known boss names for a game (scrapes Wikipedia and Fandom wikis)",
+    )
+
     args = parser.parse_args()
 
     # Setup logging
@@ -1650,6 +1658,33 @@ Examples:
     )
 
     logger.info(f"YouTube Boss Title Updater v{__version__} starting")
+
+    # Handle --lookup-bosses (no config or auth required)
+    if args.lookup_bosses:
+        game_name = args.lookup_bosses
+        console.print(f"\n[bold]Looking up bosses for:[/bold] {game_name}\n")
+
+        scraper = BossScraper(logger=logger)
+        bosses = scraper.get_boss_list(game_name)
+
+        if bosses:
+            table = Table(title=f"Known Bosses for {game_name}", box=box.ROUNDED)
+            table.add_column("#", style="dim", justify="right")
+            table.add_column("Boss Name", style="bold")
+
+            for i, boss in enumerate(bosses, 1):
+                table.add_row(str(i), boss)
+
+            console.print(table)
+            console.print(f"\n[green]Found {len(bosses)} boss(es)[/green]\n")
+        else:
+            console.print(f"[yellow]No bosses found for '{game_name}'.[/yellow]")
+            console.print("This could mean:")
+            console.print("  - The game name doesn't match a Wikipedia or Fandom wiki page")
+            console.print("  - No boss list is available on the supported wikis")
+            console.print(f"\nConfigured Fandom wikis: {', '.join(scraper.FANDOM_DOMAINS.keys())}\n")
+
+        return 0
 
     # Load configuration
     try:
