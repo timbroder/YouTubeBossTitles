@@ -139,9 +139,7 @@ class YouTubeBossUpdater:
                 try:
                     creds.refresh(Request())
                 except Exception as e:
-                    self.logger.warning(
-                        f"Token refresh failed ({e}), deleting token.json and re-authenticating"
-                    )
+                    self.logger.warning(f"Token refresh failed ({e}), deleting token.json and re-authenticating")
                     os.remove("token.json")
                     creds = None
             if not creds or not creds.valid:
