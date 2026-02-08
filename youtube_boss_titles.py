@@ -136,8 +136,15 @@ class YouTubeBossUpdater:
         # If no valid credentials, let user log in
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
+                try:
+                    creds.refresh(Request())
+                except Exception as e:
+                    self.logger.warning(
+                        f"Token refresh failed ({e}), deleting token.json and re-authenticating"
+                    )
+                    os.remove("token.json")
+                    creds = None
+            if not creds or not creds.valid:
                 if not os.path.exists("client_secret.json"):
                     raise FileNotFoundError(
                         "client_secret.json not found. Please download it from Google Cloud Console."
