@@ -479,13 +479,13 @@ class YouTubeBossUpdater:
 
         try:
             video_url = f"https://www.youtube.com/watch?v={video_id}"
-            video_path = os.path.join(temp_dir, "video.mp4")
+            video_base = os.path.join(temp_dir, "video")
 
             # Download first 90 seconds of video
             quality = self.config.get("processing.frame_extraction.quality", "worst")
             ydl_opts = {
-                "format": f"{quality}[ext=mp4]",  # Use configured quality
-                "outtmpl": video_path,
+                "format": f"{quality}[ext=mp4]/{quality}",  # Use configured quality, fall back to any format
+                "outtmpl": video_base + ".%(ext)s",
                 "quiet": True,
                 "no_warnings": True,
                 "download_ranges": lambda info, ydl: [{"start_time": 0, "end_time": 90}],
@@ -493,6 +493,13 @@ class YouTubeBossUpdater:
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([video_url])
+
+            # Find whichever file was downloaded
+            downloaded = [f for f in os.listdir(temp_dir) if f.startswith("video.")]
+            if not downloaded:
+                print("  ✗ Failed to download video")
+                return frames
+            video_path = os.path.join(temp_dir, downloaded[0])
 
             if not os.path.exists(video_path):
                 print("  ✗ Failed to download video")
