@@ -200,13 +200,15 @@ class TestVideoOperations:
     @patch("youtube_boss_titles.yt_dlp.YoutubeDL")
     @patch("youtube_boss_titles.subprocess.run")
     @patch("youtube_boss_titles.os.path.exists")
+    @patch("youtube_boss_titles.os.listdir")
     @patch("builtins.open", create=True)
     @patch("youtube_boss_titles.base64.b64encode")
     def test_extract_video_frames_success(
-        self, mock_b64, mock_open, mock_exists, mock_subprocess, mock_ytdl, mock_mkdtemp, updater
+        self, mock_b64, mock_open, mock_listdir, mock_exists, mock_subprocess, mock_ytdl, mock_mkdtemp, updater
     ):
         """Test successful video frame extraction"""
         mock_mkdtemp.return_value = "/tmp/test"
+        mock_listdir.return_value = ["video.mp4"]
         mock_exists.side_effect = [True, True, True]  # video exists, frames exist
         mock_b64.return_value.decode.return_value = "base64encodedimage"
 
