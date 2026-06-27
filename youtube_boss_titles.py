@@ -481,10 +481,12 @@ class YouTubeBossUpdater:
             video_url = f"https://www.youtube.com/watch?v={video_id}"
             video_base = os.path.join(temp_dir, "video")
 
-            # Download first 90 seconds of video
+            # Download first 90 seconds of video.
+            # Require a video stream (vcodec!=none) so we never grab an audio-only
+            # format, which would make ffmpeg frame extraction fail with exit code 8.
             quality = self.config.get("processing.frame_extraction.quality", "worst")
             ydl_opts = {
-                "format": f"{quality}[ext=mp4]/{quality}",  # Use configured quality, fall back to any format
+                "format": f"{quality}[vcodec!=none][ext=mp4]/{quality}[vcodec!=none]/{quality}",
                 "outtmpl": video_base + ".%(ext)s",
                 "quiet": True,
                 "no_warnings": True,
