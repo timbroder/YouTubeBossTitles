@@ -7,7 +7,6 @@ Provides game metadata from RAWG API with caching
 import logging
 import os
 from datetime import datetime, timedelta
-from typing import Optional
 
 import requests
 
@@ -49,9 +48,7 @@ class GamingAPI:
         "dark fantasy",
     ]
 
-    def __init__(
-        self, api_key: Optional[str] = None, cache_expiry_days: int = 30, logger: Optional[logging.Logger] = None
-    ):
+    def __init__(self, api_key: str | None = None, cache_expiry_days: int = 30, logger: logging.Logger | None = None):
         """
         Initialize Gaming API client
 
@@ -78,7 +75,7 @@ class GamingAPI:
                 "Get an API key at https://rawg.io/apidocs"
             )
 
-    def _make_request(self, endpoint: str, params: Optional[dict] = None) -> Optional[dict]:
+    def _make_request(self, endpoint: str, params: dict | None = None) -> dict | None:
         """
         Make a request to RAWG API with error handling
 
@@ -105,7 +102,7 @@ class GamingAPI:
             self.logger.error(f"RAWG API request failed: {e}")
             return None
 
-    def _get_cached(self, cache_key: str) -> Optional[dict]:
+    def _get_cached(self, cache_key: str) -> dict | None:
         """
         Get cached API response if not expired
 
@@ -140,7 +137,7 @@ class GamingAPI:
         self._cache[cache_key] = (data, datetime.now())
         self.logger.debug(f"Cached data for key: {cache_key}")
 
-    def search_game(self, game_name: str) -> Optional[dict]:
+    def search_game(self, game_name: str) -> dict | None:
         """
         Search for a game by name
 
@@ -179,7 +176,7 @@ class GamingAPI:
 
         return game
 
-    def get_game_details(self, game_id: int) -> Optional[dict]:
+    def get_game_details(self, game_id: int) -> dict | None:
         """
         Get detailed information about a game
 
@@ -276,7 +273,7 @@ class GamingAPI:
         self.logger.debug(f"Game '{game_name}' not identified as souls-like")
         return False
 
-    def get_game_metadata(self, game_name: str) -> Optional[dict]:
+    def get_game_metadata(self, game_name: str) -> dict | None:
         """
         Get comprehensive metadata for a game
 

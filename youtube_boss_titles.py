@@ -14,7 +14,6 @@ import tempfile
 import time
 from collections import defaultdict
 from datetime import datetime
-from typing import Optional
 
 import gspread
 import openai
@@ -80,7 +79,7 @@ GAME_NAME_ALIASES = {
 
 class YouTubeBossUpdater:
     def __init__(
-        self, config: Config, logger_instance: Optional[logging.Logger] = None, db_path: str = "processed_videos.db"
+        self, config: Config, logger_instance: logging.Logger | None = None, db_path: str = "processed_videos.db"
     ) -> None:
         """
         Initialize the updater with configuration.
@@ -246,7 +245,7 @@ class YouTubeBossUpdater:
             print(f"  ⚠ Warning: Could not load processed videos: {e}")
 
     def log_video_update(
-        self, video_id: str, original_title: str, new_title: str, playlist_name: str, playlist_id: Optional[str]
+        self, video_id: str, original_title: str, new_title: str, playlist_name: str, playlist_id: str | None
     ) -> None:
         """
         Log video update to Google Sheets.
@@ -447,7 +446,7 @@ class YouTubeBossUpdater:
         """
         return f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
 
-    def extract_video_frames(self, video_id: str, timestamps: Optional[list[int]] = None) -> list[str]:
+    def extract_video_frames(self, video_id: str, timestamps: list[int] | None = None) -> list[str]:
         """
         Extract frames from video at specific timestamps using yt-dlp.
 
@@ -663,7 +662,7 @@ class YouTubeBossUpdater:
         # Reject names that are just "mode" or end with "mode" without context
         return not (boss_lower == "mode" or boss_lower.endswith(" mode"))
 
-    def identify_boss_from_images(self, image_urls: list[str], game_name: str) -> Optional[str]:
+    def identify_boss_from_images(self, image_urls: list[str], game_name: str) -> str | None:
         """
         Use OpenAI Vision to identify boss from one or more images.
 
@@ -728,7 +727,7 @@ Boss name:""",
             print(f"  ✗ Error calling OpenAI API: {e}")
             return None
 
-    def identify_boss(self, video_id: str, game_name: str, attempt: int = 0) -> Optional[str]:
+    def identify_boss(self, video_id: str, game_name: str, attempt: int = 0) -> str | None:
         """
         Use OpenAI Vision to identify the boss in the video
         Hybrid approach: Try cache first, then thumbnail, then extract video frames if needed
@@ -905,7 +904,7 @@ Boss name:""",
             print(f"  ✗ Error updating title: {e}")
             return False
 
-    def get_or_create_playlist(self, game_name: str) -> Optional[str]:
+    def get_or_create_playlist(self, game_name: str) -> str | None:
         """
         Get existing playlist for game or create new one.
 
@@ -1214,13 +1213,13 @@ Boss name:""",
     def run(
         self,
         dry_run: bool = False,
-        video_ids: Optional[list[str]] = None,
-        game: Optional[str] = None,
-        limit: Optional[int] = None,
+        video_ids: list[str] | None = None,
+        game: str | None = None,
+        limit: int | None = None,
         offset: int = 0,
         force: bool = False,
         resume: bool = False,
-        workers: Optional[int] = None,
+        workers: int | None = None,
     ) -> None:
         """
         Main execution function.
@@ -1414,7 +1413,7 @@ Boss name:""",
         console.print()
 
     def _process_video_list(
-        self, videos: list[dict[str, str]], dry_run: bool, force: bool, workers: Optional[int] = None
+        self, videos: list[dict[str, str]], dry_run: bool, force: bool, workers: int | None = None
     ) -> None:
         """
         Process a list of videos with rich progress bar and optional parallel processing.

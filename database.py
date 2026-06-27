@@ -7,7 +7,6 @@ Tracks processed videos, their state, and errors
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Optional
 
 
 class VideoDatabase:
@@ -134,7 +133,7 @@ class VideoDatabase:
             print(f"Database error adding video {video_id}: {e}")
             return False
 
-    def get_video(self, video_id: str) -> Optional[dict]:
+    def get_video(self, video_id: str) -> dict | None:
         """Get video record by ID"""
         try:
             with self.get_connection() as conn:
@@ -150,9 +149,9 @@ class VideoDatabase:
         self,
         video_id: str,
         status: str,
-        new_title: Optional[str] = None,
-        boss_name: Optional[str] = None,
-        error_message: Optional[str] = None,
+        new_title: str | None = None,
+        boss_name: str | None = None,
+        error_message: str | None = None,
     ) -> bool:
         """Update video status and related fields"""
         try:
@@ -325,7 +324,7 @@ class VideoDatabase:
         key = f"{video_id}:{game_name}"
         return hashlib.sha256(key.encode()).hexdigest()
 
-    def get_cached_boss(self, video_id: str, game_name: str) -> Optional[dict]:
+    def get_cached_boss(self, video_id: str, game_name: str) -> dict | None:
         """Get cached boss identification result"""
         try:
             with self.get_connection() as conn:

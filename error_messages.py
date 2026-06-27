@@ -2,8 +2,6 @@
 Error messages with codes and helpful troubleshooting hints
 """
 
-from typing import Optional
-
 
 class ErrorCode:
     """Error codes for different failure types"""
@@ -104,7 +102,7 @@ ERROR_MESSAGES: dict[str, dict[str, str]] = {
 }
 
 
-def format_error(error_code: str, details: Optional[str] = None) -> str:
+def format_error(error_code: str, details: str | None = None) -> str:
     """
     Format an error message with code, hint, and documentation link
 
