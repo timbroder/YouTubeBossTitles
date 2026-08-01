@@ -6,7 +6,6 @@ Allows reverting video title changes
 
 import logging
 from datetime import datetime
-from typing import Optional
 
 from rich.console import Console
 from rich.prompt import Confirm
@@ -23,7 +22,7 @@ class RollbackManager:
     and audit logging
     """
 
-    def __init__(self, updater, logger: Optional[logging.Logger] = None):
+    def __init__(self, updater, logger: logging.Logger | None = None):
         """
         Initialize rollback manager
 

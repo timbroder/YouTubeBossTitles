@@ -8,7 +8,6 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Optional
 from urllib.parse import quote, urljoin
 
 import requests
@@ -41,7 +40,7 @@ class BossScraper:
         "liesofp": "https://liesofp.fandom.com",
     }
 
-    def __init__(self, cache_dir: str = "boss_lists", logger: Optional[logging.Logger] = None):
+    def __init__(self, cache_dir: str = "boss_lists", logger: logging.Logger | None = None):
         """
         Initialize boss scraper
 
@@ -75,7 +74,7 @@ class BossScraper:
             time.sleep(sleep_time)
         self._last_request_time = time.time()
 
-    def _fetch_url(self, url: str) -> Optional[str]:
+    def _fetch_url(self, url: str) -> str | None:
         """
         Fetch URL content with error handling and rate limiting
 
@@ -109,7 +108,7 @@ class BossScraper:
         safe_name = "".join(c if c.isalnum() else "_" for c in game_name.lower())
         return self.cache_dir / f"{safe_name}.json"
 
-    def _load_from_cache(self, game_name: str) -> Optional[list[str]]:
+    def _load_from_cache(self, game_name: str) -> list[str] | None:
         """
         Load boss list from cache
 
@@ -365,7 +364,7 @@ class BossScraper:
         self.logger.info(f"Total {len(unique_bosses)} unique bosses found for {game_name}")
         return unique_bosses
 
-    def clear_cache(self, game_name: Optional[str] = None) -> int:
+    def clear_cache(self, game_name: str | None = None) -> int:
         """
         Clear cached boss lists
 
