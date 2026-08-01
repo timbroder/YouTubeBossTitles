@@ -26,7 +26,10 @@ class ErrorCode:
 ERROR_MESSAGES: dict[str, dict[str, str]] = {
     ErrorCode.AUTH_FAILED: {
         "message": "Authentication failed",
-        "hint": "Make sure client_secret.json exists and is valid. Try deleting token.json to re-authenticate.",
+        "hint": (
+            "Make sure client_secret.json exists and is valid. "
+            "Try deleting token.json and token_sheets.json to re-authenticate."
+        ),
         "docs": "https://developers.google.com/youtube/v3/guides/auth/server-side-web-apps",
     },
     ErrorCode.CONFIG_NOT_FOUND: {

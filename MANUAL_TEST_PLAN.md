@@ -43,7 +43,8 @@ echo "RAWG_API_KEY: ${RAWG_API_KEY:-"Not set (will use fallback)"}"
 ### Required Files
 
 - `client_secret.json` - Google OAuth credentials (YouTube + Sheets API)
-- `token.json` - Will be created on first run after OAuth flow
+- `token.json` - YouTube OAuth token, created on first run
+- `token_sheets.json` - Sheets/Drive OAuth token, created on first run (separate grant)
 
 ### Required Software
 
@@ -165,9 +166,11 @@ python youtube_boss_titles.py --dry-run --limit 1
 ```
 
 **Expected Result:**
-- Browser opens to Google OAuth consent screen
+- Browser opens to Google OAuth consent screen (YouTube scope)
 - User authorizes application
-- `token.json` created successfully
+- Browser opens a second consent screen (Sheets/Drive scopes)
+- User authorizes application again
+- `token.json` and `token_sheets.json` created successfully
 - Command proceeds to fetch videos
 
 **Status:** ⏳
@@ -1470,6 +1473,11 @@ None - all core functionality working correctly.
 1. Missing OAuth scope for Google Sheets - FIXED
    - Added `drive.file` scope to SCOPES in youtube_boss_titles.py
    - Required for gspread to search spreadsheets by name
+
+2. Google rejects YouTube + Drive scopes in one grant - FIXED
+   - "This request contains scopes that cannot be requested together"
+   - Split into YOUTUBE_SCOPES (token.json) and SHEETS_SCOPES (token_sheets.json)
+   - Costs one extra consent prompt on first run
 ```
 
 ### Minor Issues Found
