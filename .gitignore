@@ -1,6 +1,7 @@
 # API Credentials
 client_secret.json
 token.json
+token_sheets.json
 .env
 
 # Database

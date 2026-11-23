@@ -45,11 +45,20 @@ logger = None
 
 
 # API scopes
-SCOPES = [
+#
+# Google refuses to issue a single grant covering both YouTube and Drive scopes
+# ("This request contains scopes that cannot be requested together"), so the two
+# APIs are authorized separately and each grant gets its own token file.
+YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.force-ssl",
+]
+SHEETS_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.file",
 ]
+
+YOUTUBE_TOKEN_FILE = "token.json"
+SHEETS_TOKEN_FILE = "token_sheets.json"
 
 # Souls-like games that should get "Melee" in the title
 SOULSLIKE_GAMES = [
@@ -110,12 +119,59 @@ class YouTubeBossUpdater:
         )
         self.boss_scraper = BossScraper(logger=self.logger)
 
+    def _get_credentials(self, token_file: str, scopes: list[str]) -> Credentials:
+        """
+        Load OAuth credentials for a set of scopes, authorizing the user if needed.
+
+        Reuses the token file when possible, refreshes it when expired, and falls
+        back to a browser consent flow if the token is missing or unusable.
+
+        Args:
+            token_file: Path to the file caching this grant's tokens
+            scopes: OAuth scopes this grant must cover
+
+        Returns:
+            Valid credentials for the requested scopes
+
+        Raises:
+            FileNotFoundError: If client_secret.json is not found
+        """
+        creds: Credentials | None = None
+
+        # Token file stores user's access and refresh tokens
+        if os.path.exists(token_file):
+            creds = Credentials.from_authorized_user_file(token_file, scopes)
+
+        # If no valid credentials, let user log in
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                except Exception as e:
+                    self.logger.warning(f"Token refresh failed ({e}), deleting {token_file} and re-authenticating")
+                    os.remove(token_file)
+                    creds = None
+            if not creds or not creds.valid:
+                if not os.path.exists("client_secret.json"):
+                    raise FileNotFoundError(
+                        "client_secret.json not found. Please download it from Google Cloud Console."
+                    )
+                flow = InstalledAppFlow.from_client_secrets_file("client_secret.json", scopes)
+                creds = flow.run_local_server(port=0)
+
+            # Save credentials for next run
+            with open(token_file, "w") as token:
+                token.write(creds.to_json())
+
+        return creds
+
     def authenticate_youtube(self) -> None:
         """
-        Authenticate with YouTube API using OAuth 2.0.
+        Authenticate with the YouTube and Google Sheets APIs using OAuth 2.0.
 
-        Creates YouTube API and Google Sheets clients. Handles token refresh
-        and initial authentication flow if needed.
+        Google will not grant YouTube and Drive scopes together, so this performs
+        two separate authorizations, each cached in its own token file. Expect two
+        browser consent prompts the first time.
 
         Raises:
             FileNotFoundError: If client_secret.json is not found
@@ -126,39 +182,14 @@ class YouTubeBossUpdater:
             >>> updater.authenticate_youtube()
             ✓ YouTube authentication successful
         """
-        creds = None
-
-        # Token file stores user's access and refresh tokens
-        if os.path.exists("token.json"):
-            creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-
-        # If no valid credentials, let user log in
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                try:
-                    creds.refresh(Request())
-                except Exception as e:
-                    self.logger.warning(f"Token refresh failed ({e}), deleting token.json and re-authenticating")
-                    os.remove("token.json")
-                    creds = None
-            if not creds or not creds.valid:
-                if not os.path.exists("client_secret.json"):
-                    raise FileNotFoundError(
-                        "client_secret.json not found. Please download it from Google Cloud Console."
-                    )
-                flow = InstalledAppFlow.from_client_secrets_file("client_secret.json", SCOPES)
-                creds = flow.run_local_server(port=0)
-
-            # Save credentials for next run
-            with open("token.json", "w") as token:
-                token.write(creds.to_json())
-
-        self.youtube = build("youtube", "v3", credentials=creds)
+        youtube_creds = self._get_credentials(YOUTUBE_TOKEN_FILE, YOUTUBE_SCOPES)
+        self.youtube = build("youtube", "v3", credentials=youtube_creds)
         print("✓ YouTube authentication successful")
         self.logger.info("YouTube API authentication successful")
 
-        # Initialize Google Sheets client
-        self.sheets_client = gspread.authorize(creds)
+        # Initialize Google Sheets client (separate grant from YouTube)
+        sheets_creds = self._get_credentials(SHEETS_TOKEN_FILE, SHEETS_SCOPES)
+        self.sheets_client = gspread.authorize(sheets_creds)
         print("✓ Google Sheets authentication successful")
         self.logger.info("Google Sheets authentication successful")
 

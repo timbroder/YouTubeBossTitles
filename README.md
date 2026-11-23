@@ -197,7 +197,7 @@ Process and update videos:
 python youtube_boss_titles.py
 ```
 
-On first run, a browser window will open asking you to authorize the app. After authorization, the credentials will be saved in `token.json` for future use.
+On first run, a browser window will open asking you to authorize the app. Google does not allow YouTube and Drive scopes in a single grant, so you will be prompted **twice** — once for YouTube and once for Sheets/Drive. The credentials are saved in `token.json` and `token_sheets.json` for future use.
 
 ## How It Works
 

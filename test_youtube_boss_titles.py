@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+import youtube_boss_titles
 from config import Config
 from youtube_boss_titles import YouTubeBossUpdater
 
@@ -152,7 +153,12 @@ class TestAuthentication:
 
         assert updater.youtube is not None
         assert updater.sheets_client is not None
-        mock_creds_from_file.assert_called_once()
+        # One grant per API, each from its own token file
+        assert mock_creds_from_file.call_count == 2
+        assert [call.args[0] for call in mock_creds_from_file.call_args_list] == [
+            youtube_boss_titles.YOUTUBE_TOKEN_FILE,
+            youtube_boss_titles.SHEETS_TOKEN_FILE,
+        ]
         mock_build.assert_called_once()
         mock_gspread.assert_called_once()
 
@@ -165,8 +171,8 @@ class TestAuthentication:
         self, mock_open, mock_gspread, mock_build, mock_flow, mock_exists, updater, mock_credentials
     ):
         """Test authentication flow when no token exists"""
-        # First call checks token.json (doesn't exist), second checks client_secret.json (exists)
-        mock_exists.side_effect = [False, True]
+        # Each grant checks its token file (missing), then client_secret.json (exists)
+        mock_exists.side_effect = [False, True, False, True]
 
         mock_flow_instance = Mock()
         mock_flow_instance.run_local_server.return_value = mock_credentials
@@ -179,8 +185,18 @@ class TestAuthentication:
 
         assert updater.youtube is not None
         assert updater.sheets_client is not None
-        mock_flow.assert_called_once()
-        mock_flow_instance.run_local_server.assert_called_once()
+        # Separate consent flow for YouTube and for Sheets/Drive
+        assert mock_flow.call_count == 2
+        assert [call.args[1] for call in mock_flow.call_args_list] == [
+            youtube_boss_titles.YOUTUBE_SCOPES,
+            youtube_boss_titles.SHEETS_SCOPES,
+        ]
+        assert mock_flow_instance.run_local_server.call_count == 2
+
+    def test_youtube_and_drive_scopes_not_combined(self):
+        """Google rejects a single grant covering both YouTube and Drive scopes"""
+        assert not any("drive" in scope for scope in youtube_boss_titles.YOUTUBE_SCOPES)
+        assert not any("youtube" in scope for scope in youtube_boss_titles.SHEETS_SCOPES)
 
 
 # ============================================================================
